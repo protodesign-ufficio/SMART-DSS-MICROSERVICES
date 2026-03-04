@@ -62,3 +62,28 @@ Poiché il confronto **code-to-code** tra `SMART-DSS-NEW` e `SMART-DSS-MICROSERV
 ## Raccomandazione prioritaria
 
 Ripristinare la semantica cache di `weather_routing/carico` anche nel nuovo flusso microservizi (cache lookup per coppia `corsa_id + vascello_id` su finestra temporale configurabile), mantenendo la persistenza su `percorsi_db`.
+
+---
+
+## Aggiornamento 2026-03-04 — Audit completo e fix applicati
+
+### Nuovi servizi aggiunti dopo l'analisi iniziale
+- **weather_service** (:8076) — microservizio dati meteo Copernicus con DB dedicato `weather_db`
+- Aggiunta delega `WEATHER_SERVICE_URL` nel gateway
+
+### Bug trovati e risolti (audit 2026-03-04)
+1. **`GET /health` mancante** nel gateway — aggiunto
+2. **`GET /dashboard/corse` timeout 503** — timeout 120s + cache N+1 query (59s → 29s)
+3. **`GET /corsa/lista` lento** — timeout 60s + cache N+1 query (21.6s → 10.6s)
+4. **`GET /piano/lista` rischio timeout** — timeout portato a 60s
+5. **`GET /percorso/by_corsa?include=`** — parametro `include` validato ma mai applicato; implementata expansion (corsa, tratta, vascello)
+6. **`GET /assegnazione/by_piano` e `POST /assegnazione/bulk`** — timeout portato a 60s
+7. **`GET /corsa/giorno` N+1** — cache dict aggiunta nel microservizio operativo
+
+### Stato gap cache `weather_routing/carico`
+Il gap critico documentato sopra (semantica cache per coppie corsa/vascello) **resta aperto**. Le chiamate ripetute producono ancora `status: computed` nel nuovo stack.
+
+### Endpoint totali verificati
+- Gateway: **69 endpoint** (tutti funzionanti, 0 hard failure)
+- Health check: **9/9 servizi OK**
+- Test `include` parametro: **5 combinazioni verificate e funzionanti**

@@ -17,8 +17,16 @@ router = APIRouter(prefix="", tags=["Alerting"])
     response_model=List[AllarmeResponse],
     summary="Lista allarmi",
     description="Restituisce gli ultimi allarmi operativi ordinati per data decrescente.",
+    response_description="Lista allarmi operativi con id, utente assegnatario, testo e timestamp creazione.",
 )
-def lista_allarmi(limit: int = Query(200, ge=1, le=2000)):
+def lista_allarmi(
+    limit: int = Query(
+        200,
+        ge=1,
+        le=2000,
+        description="Numero massimo di allarmi da restituire (default 200, massimo 2000).",
+    )
+):
     if alerting_delegation_enabled():
         try:
             return alerting_get_json(f"/internal/allarme/lista?limit={limit}")

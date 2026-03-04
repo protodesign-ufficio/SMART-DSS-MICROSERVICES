@@ -4,6 +4,7 @@ import numpy as np
 import re
 import time as pytime
 import json
+import requests
 import matplotlib.pyplot as plt
 
 from NAMOA import build_time_min_graph, dijkstra_single_cost, dijkstra_time_from_start, filter_graph_by_reachable, filter_graph_by_reachable, namoa_instrumented, namoa_instrumented_visual, reverse_graph
@@ -14,7 +15,7 @@ from math import hypot, log
 from graphs_cell import floor_time, get_cached_namoa_graph, save_namoa_graph
 
 
-from Api_Copernicus import debug_plot_currents, download_copernicus, generate_fake_copernicus_dataset_km
+from Api_Copernicus import debug_plot_currents, generate_fake_copernicus_dataset_km
 from graphs_cell import get_cached_namoa_graph
 from routing import (
     build_double_weighted_graph_NAMOA,
@@ -28,6 +29,7 @@ import os
 # DATASET_ID = "cmems_mod_med_phy-cur_anfc_4.2km_PT15M-i"
 VARIABLES = ["uo", "vo"]
 OUT_DIR = "./copernicus-data"
+WEATHER_SERVICE_URL = os.getenv("WEATHER_SERVICE_URL", "http://weather:8076")
 os.environ["HDF5_USE_FILE_LOCKING"] = "FALSE"
 os.environ["HDF5_DISABLE_VERSION_CHECK"] = "2"
 
@@ -51,17 +53,41 @@ def load_dataset_for_date(date_str, bbox, dataset_id):
     out_path = os.path.join(OUT_DIR, out_file)
     print("!!! !!! !!! !!! !!! Dataset path:", out_path)
 
+    if "wav" in dataset_id:
+        requested_variables = ["VMDR_WW", "VTM01_WW", "VHM0_WW"]
+    else:
+        requested_variables = VARIABLES
+
     if not os.path.exists(out_path):
-        download_copernicus(
-            dataset_id=dataset_id,
-            #dataset_id= "cmems_mod_med_wav_anfc_4.2km_PT1H-i",
-            variables=VARIABLES,
-            bbox=bbox,
-            start=date_str,   
-            end=date_str,
-            out_dir=OUT_DIR,
-            out_file=out_file,
-        )
+        payload = {
+            "dataset_id": dataset_id,
+            "variables": requested_variables,
+            "bbox": bbox,
+            "start": date_str,
+            "end": date_str,
+            "out_file": out_file,
+        }
+        try:
+            response = requests.post(
+                f"{WEATHER_SERVICE_URL.rstrip('/')}/internal/weather/subset/download",
+                json=payload,
+                timeout=120,
+            )
+        except requests.RequestException as exc:
+            raise RuntimeError(f"Weather service unavailable: {exc}") from exc
+
+        if response.status_code >= 400:
+            detail = response.text
+            try:
+                body = response.json()
+                if isinstance(body, dict):
+                    detail = body.get("detail", detail)
+            except Exception:
+                pass
+            raise RuntimeError(f"Weather service error: {detail}")
+
+        if not os.path.exists(out_path):
+            raise RuntimeError(f"Weather service did not produce expected file: {out_path}")
     
     ds = xr.open_dataset(out_path, engine="h5netcdf")
     print("Dataset loaded:", ds)

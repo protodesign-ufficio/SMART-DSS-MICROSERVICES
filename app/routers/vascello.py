@@ -4,6 +4,8 @@ from datetime import timedelta
 import json
 from app.core.database import get_connection
 from app.core.anagrafica_client import delegation_enabled, get_json, post_json, AnagraficaDelegationError
+from app.core.operativo_client import get_json as operativo_get_json, OperativoDelegationError
+from app.core.percorsi_client import get_json as percorsi_get_json, PercorsiDelegationError
 from app.core.config import ENABLE_ANAGRAFICA_FALLBACK
 from app.models.vascello import VascelloInput, Vascello, VascelloModificaInput, VascelloDeleteInput
 from app.models.percorso import PercorsoAttivoResponse
@@ -218,6 +220,81 @@ Oggetto contenente:
     }
 )
 def get_percorso_attivo_by_mmsi(mmsi: str):
+    if delegation_enabled():
+        try:
+            vascello = get_json(f"/internal/vascello/by_mmsi/{mmsi}")
+            if vascello is None:
+                raise HTTPException(404, f"Vascello con MMSI {mmsi} non trovato")
+
+            vascello_id = str(vascello.get("id"))
+            piani = operativo_get_json("/internal/piano/lista") or []
+
+            active_assignments = []
+            for piano in piani:
+                for assegnazione in (piano.get("assegnazioni") or []):
+                    if str(assegnazione.get("vascello_id")) == vascello_id and assegnazione.get("stato_esecuzione") == "IN_CORSO":
+                        active_assignments.append(assegnazione)
+
+            if not active_assignments:
+                raise HTTPException(404, f"Nessun percorso attivo per il vascello {vascello.get('nome')}")
+
+            percorsi_list = []
+            for assegnazione in active_assignments:
+                percorso_id = assegnazione.get("percorso_id")
+                if not percorso_id:
+                    continue
+
+                percorso = percorsi_get_json(f"/internal/percorso/{percorso_id}")
+                if not isinstance(percorso, dict):
+                    continue
+
+                corsa_id = percorso.get("corsa_id")
+                corsa = operativo_get_json(f"/internal/corsa/id/{corsa_id}") if corsa_id else {}
+
+                tempo_percorrenza = percorso.get("tempo_percorrenza")
+                try:
+                    tempo_percorrenza = float(tempo_percorrenza) if tempo_percorrenza is not None else 0.0
+                except Exception:
+                    tempo_percorrenza = 0.0
+
+                consumo = percorso.get("consumo")
+                try:
+                    consumo = float(consumo) if consumo is not None else 0.0
+                except Exception:
+                    consumo = 0.0
+
+                percorsi_list.append({
+                    "assegnazione": {
+                        "id": assegnazione.get("id"),
+                        "piano_id": assegnazione.get("piano_id"),
+                        "virtuale": bool(assegnazione.get("virtuale")),
+                    },
+                    "percorso": {
+                        "id": str(percorso.get("id")),
+                        "corsa_id": str(corsa_id) if corsa_id else "",
+                        "orario_partenza_schedulato": corsa.get("orario_partenza_schedulato") or "",
+                        "tratta_id": str(corsa.get("tratta_id")) if corsa.get("tratta_id") else "",
+                        "tratta_nome": corsa.get("tratta_nome") or "",
+                        "tempo_percorrenza": tempo_percorrenza,
+                        "consumo": consumo,
+                    }
+                })
+
+            if not percorsi_list:
+                raise HTTPException(404, f"Nessun percorso attivo per il vascello {vascello.get('nome')}")
+
+            return {
+                "vascello": {
+                    "id": vascello_id,
+                    "mmsi": str(vascello.get("mmsi")),
+                    "nome": vascello.get("nome"),
+                },
+                "percorsi": percorsi_list,
+            }
+        except (AnagraficaDelegationError, OperativoDelegationError, PercorsiDelegationError) as exc:
+            if not ENABLE_ANAGRAFICA_FALLBACK:
+                raise HTTPException(status_code=503, detail="Internal services unavailable") from exc
+
     conn = get_connection(); cur = conn.cursor()
     try:
         cur.execute("SELECT id, nome FROM vascello WHERE mmsi = %s", (mmsi,))

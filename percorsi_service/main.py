@@ -202,6 +202,24 @@ def get_percorsi_by_corsa(
         orario_partenza_schedulato = _parse_iso_datetime(corsa_data.get("orario_partenza_schedulato") if corsa_data else None)
         previsione = corsa_data.get("previsione") if corsa_data else None
 
+        # Pre-fetch tratta if include requested (same for all percorsi in this corsa)
+        tratta_obj_cache = None
+        if "tratta" in includes and corsa_data:
+            tratta_id = corsa_data.get("tratta_id")
+            if tratta_id:
+                t = _get_json(ANAGRAFICA_SERVICE_URL, f"/internal/tratta/{tratta_id}")
+                if t:
+                    tratta_obj_cache = {
+                        "id": t.get("id"),
+                        "nome": t.get("nome"),
+                        "porto_partenza_id": t.get("porto_partenza_id"),
+                        "porto_arrivo_id": t.get("porto_arrivo_id"),
+                        "distanza_miglia": t.get("distanza_miglia"),
+                        "porti_intermedi": t.get("porti_intermedi"),
+                        "tratta_multiporto": t.get("tratta_multiporto"),
+                        "geometry": t.get("geometry"),
+                    }
+
         vascelli_cache = {}
         percorsi = []
         for r in rows:
@@ -254,6 +272,48 @@ def get_percorsi_by_corsa(
                 "vref": vref,
                 "geom_rotta": geom_rotta,
             }
+
+            # Apply include expansions
+            if "corsa" in includes and corsa_data:
+                previsione_obj = None
+                prev_d = corsa_data.get("previsione")
+                if prev_d:
+                    previsione_obj = {
+                        "id": prev_d.get("id"),
+                        "passeggeri_stimati": prev_d.get("passeggeri_stimati"),
+                        "confidenza_min": prev_d.get("confidenza_min"),
+                        "confidenza_max": prev_d.get("confidenza_max"),
+                        "created_at": None,
+                    }
+                item["corsa"] = {
+                    "id": corsa_data.get("id"),
+                    "nome": corsa_data.get("nome"),
+                    "tratta_id": corsa_data.get("tratta_id"),
+                    "tratta_nome": corsa_data.get("tratta_nome"),
+                    "orario_partenza_schedulato": corsa_data.get("orario_partenza_schedulato"),
+                    "orario_arrivo_max": corsa_data.get("orario_arrivo_max"),
+                    "previsione_domanda_id": corsa_data.get("previsione_domanda_id"),
+                    "previsione": previsione_obj,
+                }
+
+            if "tratta" in includes and tratta_obj_cache:
+                item["tratta"] = tratta_obj_cache
+
+            if "vascello" in includes and vessel_id:
+                v_data = vascelli_cache.get(str(vessel_id))
+                if v_data:
+                    item["vascello"] = {
+                        "id": v_data.get("id"),
+                        "mmsi": v_data.get("mmsi"),
+                        "nome": v_data.get("nome"),
+                        "capacita_passeggeri": v_data.get("capacita_passeggeri"),
+                        "costo_orario_esercizio": v_data.get("costo_orario_esercizio"),
+                        "velocita_max_nodi": v_data.get("velocita_max_nodi"),
+                        "stato_salute_aggregato": v_data.get("stato_salute_aggregato"),
+                        "profilo_consumo_json": v_data.get("profilo_consumo_json"),
+                        "data_creazione": v_data.get("data_creazione"),
+                    }
+
             percorsi.append(item)
 
         return {"corsa_id": corsa_id, "percorsi": percorsi}

@@ -156,3 +156,35 @@ def get_previsione(previsione_id: str):
     finally:
         cur.close()
         conn.close()
+
+
+@app.get("/internal/previsione/corsa/{corsa_id}/latest")
+def get_latest_previsione_by_corsa(corsa_id: str):
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT id, corsa_id, passeggeri_stimati, confidenza_min, confidenza_max, created_at
+            FROM previsione_domanda
+            WHERE corsa_id = %s
+            ORDER BY created_at DESC
+            LIMIT 1;
+            """,
+            (corsa_id,),
+        )
+        row = cur.fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Previsione non trovata")
+
+        return {
+            "id": str(row[0]),
+            "corsa_id": str(row[1]) if row[1] else None,
+            "passeggeri_stimati": row[2],
+            "confidenza_min": row[3],
+            "confidenza_max": row[4],
+            "created_at": row[5].isoformat() if row[5] else None,
+        }
+    finally:
+        cur.close()
+        conn.close()

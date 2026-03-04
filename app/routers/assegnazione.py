@@ -243,7 +243,7 @@ Lista di `AssegnazioneResponse` con:
 def lista_assegnazioni_by_piano_endpoint(piano_id: str):
     if operativo_delegation_enabled():
         try:
-            return operativo_get_json(f"/internal/assegnazione/by_piano/{piano_id}")
+            return operativo_get_json(f"/internal/assegnazione/by_piano/{piano_id}", timeout=60.0)
         except OperativoDelegationError as exc:
             _handle_operativo_fallback(exc)
 
@@ -371,7 +371,7 @@ def crea_assegnazioni_bulk_endpoint(data: CreaAssegnazioniBulkInput):
                     {"percorso_id": item.percorso_id, "virtuale": item.virtuale}
                     for item in data.percorsi
                 ],
-            })
+            }, timeout=60.0)
         except OperativoDelegationError as exc:
             _handle_operativo_fallback(exc)
 

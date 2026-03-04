@@ -176,8 +176,8 @@ def lista_piano_endpoint(data_riferimento: Optional[date] = Query(None, descript
     if operativo_delegation_enabled():
         try:
             if data_riferimento is None:
-                return operativo_get_json("/internal/piano/lista")
-            return operativo_get_json(f"/internal/piano/lista?data_riferimento={data_riferimento.isoformat()}")
+                return operativo_get_json("/internal/piano/lista", timeout=60.0)
+            return operativo_get_json(f"/internal/piano/lista?data_riferimento={data_riferimento.isoformat()}", timeout=60.0)
         except OperativoDelegationError as exc:
             _handle_operativo_fallback(exc)
 

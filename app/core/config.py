@@ -126,6 +126,28 @@ Endpoint dedicati alla verifica della necessità di replanning in tempo quasi re
 *Output principale:* esito check, contesto operativo corrente e risposta dettagliata del servizio di replanning."""
     },
     {
+        "name": "Alerting",
+        "description": """**Monitoraggio allarmi operativi**
+
+Raccolta e consultazione degli allarmi generati dal sistema:
+- Lista allarmi ordinata per data di creazione decrescente
+- Integrazione con microservizio dedicato `alerting_service`
+- Fallback su database locale gateway quando configurato
+
+*Obiettivo:* fornire visibilità immediata sugli eventi critici operativi."""
+    },
+    {
+        "name": "Weather",
+        "description": """**Integrazione meteo-oceanografica (Copernicus)**
+
+Endpoint proxy verso il microservizio weather per:
+- Health check del servizio meteo e del database `weather_db`
+- Dati layer correnti/onde per dashboard geospaziale
+- Consultazione cache layer con filtro e dettaglio per `cache_key`
+
+*Supporta cache controllata* con parametri TTL e refresh per bilanciare latenza e accuratezza."""
+    },
+    {
         "name": "Configurazione",
         "description": """**Parametri runtime e integrazione**
         
@@ -159,6 +181,7 @@ ENABLE_FORECAST_FALLBACK = os.getenv("ENABLE_FORECAST_FALLBACK", "true").lower()
 ALERTING_SERVICE_URL = os.getenv("ALERTING_SERVICE_URL", "http://alerting:8075")
 ENABLE_ALERTING_DELEGATION = os.getenv("ENABLE_ALERTING_DELEGATION", "false").lower() in {"1", "true", "yes", "on"}
 ENABLE_ALERTING_FALLBACK = os.getenv("ENABLE_ALERTING_FALLBACK", "true").lower() in {"1", "true", "yes", "on"}
+WEATHER_SERVICE_URL = os.getenv("WEATHER_SERVICE_URL", "http://weather:8076")
 
 import time
 KAFKA_CONFIG_TIMESTAMP = time.time()

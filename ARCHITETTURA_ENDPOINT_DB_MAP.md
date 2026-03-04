@@ -15,6 +15,7 @@
 | forecast | `forecast_db` | `travelmar_db` solo fallback legacy (disattivato in strict mode) |
 | alerting | `alerting_db` | `travelmar_db` solo fallback legacy (disattivato in strict mode) |
 | telemetry | `telemetry_db` | connessione dedicata via `TELEMETRY_DB_CONN` |
+| weather | `weather_db` | connessione dedicata via `WEATHER_DB_CONN`; tabelle `weather_layer_cache`, `weather_subset_downloads` |
 | scheduler/simulator/replanning/config | N/A | servizi esterni/configurazione, non DB-centric gateway |
 
 ## Mappatura servizio <=> database (consumo runtime)
@@ -27,6 +28,7 @@
 | forecast_service | `forecast_db` | connessione diretta PostgreSQL (`FORECAST_DB_CONN`) | dominio previsioni |
 | alerting_service | `alerting_db` | connessione diretta PostgreSQL (`ALERTING_DB_CONN`) | dominio allarmi |
 | telemetry_service | `telemetry_db` | connessione diretta PostgreSQL (`TELEMETRY_DB_CONN`) | dominio telemetria |
+| weather_service | `weather_db` | connessione diretta PostgreSQL (`WEATHER_DB_CONN`) | dominio meteo (layer cache, subset download) |
 | scheduler_service | N/A | servizio applicativo (non DB-centric nel gateway) | orchestrazione/scheduling |
 | simulator_service | N/A | servizio applicativo (non DB-centric nel gateway) | simulazioni |
 | SMART_replanning_service | N/A | event-driven/Kafka | replanning |
@@ -120,6 +122,11 @@
 | POST | `/vascello/modifica` | gateway -> anagrafica | anagrafica_db (strict mode), travelmar_db solo fallback legacy | `app/routers/vascello.py` |
 | POST | `/weather_routing/carico` | gateway -> scheduler | N/A (servizio scheduling; persistenza non su DB gateway) | `app/routers/pianificazione.py` |
 | POST | `/weather_routing/vuoto` | gateway -> scheduler | N/A (servizio scheduling; persistenza non su DB gateway) | `app/routers/pianificazione.py` |
+| GET | `/health` | gateway (diretto) | N/A | `app/main.py` |
+| GET | `/weather/health` | gateway -> weather | weather_db | `app/routers/weather.py` |
+| POST | `/weather/layer` | gateway -> weather | weather_db (cache layer) | `app/routers/weather.py` |
+| GET | `/weather/cache/layer` | gateway -> weather | weather_db (lista cache) | `app/routers/weather.py` |
+| GET | `/weather/cache/layer/{cache_key}` | gateway -> weather | weather_db (recupero cache) | `app/routers/weather.py` |
 
 ## Endpoint interni dei microservizi
 | Metodo | Endpoint | Servizio | DB usato | Sorgente |
@@ -149,6 +156,7 @@
 | GET | `/health` | forecast service | forecast_db (strict mode), travelmar_db solo fallback legacy | `forecast_service/main.py` |
 | GET | `/internal/previsione/{previsione_id}` | forecast service | forecast_db (strict mode), travelmar_db solo fallback legacy | `forecast_service/main.py` |
 | POST | `/internal/previsione/corsa/{corsa_id}/calcola` | forecast service | forecast_db (strict mode), travelmar_db solo fallback legacy | `forecast_service/main.py` |
+| GET | `/internal/previsione/corsa/{corsa_id}/latest` | forecast service | forecast_db (strict mode), travelmar_db solo fallback legacy | `forecast_service/main.py` |
 | GET | `/health` | operativo service | operativo_db (strict mode), travelmar_db solo fallback legacy | `operativo_service/main.py` |
 | GET | `/internal/assegnazione/{assegnazione_id}` | operativo service | operativo_db (strict mode), travelmar_db solo fallback legacy | `operativo_service/main.py` |
 | POST | `/internal/assegnazione/bulk` | operativo service | operativo_db (strict mode), travelmar_db solo fallback legacy | `operativo_service/main.py` |
@@ -180,6 +188,11 @@
 | POST | `/internal/percorso/elimina` | percorsi service | percorsi_db (strict mode), travelmar_db solo fallback legacy | `percorsi_service/main.py` |
 | GET | `/health` | telemetry service | telemetry_db (via `TELEMETRY_DB_CONN`) | `telemetry_service/main.py` |
 | GET | `/internal/telemetry/positions/recent` | telemetry service | telemetry_db (via `TELEMETRY_DB_CONN`) | `telemetry_service/main.py` |
+| GET | `/health` | weather service | weather_db (via `WEATHER_DB_CONN`) | `weather_service/main.py` |
+| POST | `/internal/weather/layer` | weather service | weather_db (cache layer) | `weather_service/main.py` |
+| GET | `/internal/weather/cache/layer` | weather service | weather_db (lista cache) | `weather_service/main.py` |
+| GET | `/internal/weather/cache/layer/{cache_key}` | weather service | weather_db (recupero cache) | `weather_service/main.py` |
+| POST | `/internal/weather/subset/download` | weather service | weather_db (storico download) | `weather_service/main.py` |
 
 ## Nota operativa
 - La tabella indica il **database primario attuale**. In strict mode i fallback legacy verso `travelmar_db` per i domini split sono bloccati/configurati per fallire.

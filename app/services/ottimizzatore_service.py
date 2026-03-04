@@ -1,7 +1,6 @@
 import requests
 import json
 from datetime import datetime, timedelta
-from app.core.database import get_connection
 from app.core.config import OPT_URL, OPERATIVO_SERVICE_URL, ANAGRAFICA_SERVICE_URL, PERCORSI_SERVICE_URL, SERVICE_CONFIG
 from app.models.common import OttimizzatoreInput, OttimizzatoreBatchInput, RiposizionamentoInput
 from fastapi import HTTPException
@@ -288,36 +287,36 @@ def stima_riposizionamento(data):
     else:
         items = [RiposizionamentoInput(**data) if isinstance(data, dict) else data]
     
-    conn = get_connection()
-    cur = conn.cursor()
-    
     results = []
     payloads_to_compute = []  # lista di (inp, payload)
     
     try:
-        # Prima fase: raccolta dati dal DB per ogni item
+        # Prima fase: raccolta dati da microservizi per ogni item
         for inp in items:
-            # Recupera coordinate porto partenza
-            cur.execute("SELECT ST_Y(coordinate_gps), ST_X(coordinate_gps) FROM porto WHERE id = %s", (inp.porto_partenza_id,))
-            rp = cur.fetchone()
-            if rp is None:
+            porto_partenza = _get_json(ANAGRAFICA_SERVICE_URL, f"/internal/porto/{inp.porto_partenza_id}")
+            if porto_partenza is None:
                 raise HTTPException(404, f"Porto di partenza {inp.porto_partenza_id} non trovato")
-            lat_start, lon_start = rp
+            lat_start = porto_partenza.get("lat")
+            lon_start = porto_partenza.get("lon")
+            if lat_start is None or lon_start is None:
+                raise HTTPException(400, f"Coordinate mancanti per porto di partenza {inp.porto_partenza_id}")
             
-            # Recupera coordinate porto destinazione
-            cur.execute("SELECT ST_Y(coordinate_gps), ST_X(coordinate_gps) FROM porto WHERE id = %s", (inp.porto_destinazione_id,))
-            ra = cur.fetchone()
-            if ra is None:
+            porto_destinazione = _get_json(ANAGRAFICA_SERVICE_URL, f"/internal/porto/{inp.porto_destinazione_id}")
+            if porto_destinazione is None:
                 raise HTTPException(404, f"Porto di destinazione {inp.porto_destinazione_id} non trovato")
-            lat_end, lon_end = ra
+            lat_end = porto_destinazione.get("lat")
+            lon_end = porto_destinazione.get("lon")
+            if lat_end is None or lon_end is None:
+                raise HTTPException(400, f"Coordinate mancanti per porto di destinazione {inp.porto_destinazione_id}")
             
-            # Recupera dati vascello
-            cur.execute("SELECT id, nome, velocita_max_nodi, lunghezza_m FROM vascello WHERE id = %s", (inp.vascello_id,))
-            rv = cur.fetchone()
-            if rv is None:
+            vascello = _get_json(ANAGRAFICA_SERVICE_URL, f"/internal/vascello/{inp.vascello_id}")
+            if vascello is None:
                 raise HTTPException(404, f"Vascello {inp.vascello_id} non trovato")
-            vascello_id_db, vascello_nome, vmax_knots_db, lunghezza_m = rv
+            vascello_id_db = str(vascello.get("id"))
+            vascello_nome = vascello.get("nome")
+            vmax_knots_db = vascello.get("velocita_max_nodi")
             vmax_knots = float(vmax_knots_db) if vmax_knots_db is not None else None
+            lunghezza_m = vascello.get("lunghezza_m")
             length_m = float(lunghezza_m) if lunghezza_m is not None else 30.0
             
             if vmax_knots is None:
@@ -364,7 +363,6 @@ def stima_riposizionamento(data):
         
         r = requests.post(OPT_URL, json=all_payloads, timeout=600)
         if r.status_code != 200:
-            conn.close()
             raise HTTPException(500, f"Optimizer error: {r.text}")
         
         resp_list = r.json()
@@ -407,12 +405,9 @@ def stima_riposizionamento(data):
                 "consumo_riposizionamento": float(consumo_ripos)
             })
         
-        conn.close()
         return {"results": results}
     
     except HTTPException:
-        conn.close()
         raise
     except Exception as e:
-        conn.close()
         raise HTTPException(500, f"Errore interno: {str(e)}")

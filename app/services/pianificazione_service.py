@@ -1,9 +1,8 @@
 from app.core.database import get_connection
 from app.models.common import AssignmentRequest
-from app.models.corsa import PrevisioneRequest
-from app.services import previsione_service, ottimizzatore_service
+from app.services import ottimizzatore_service
 from app.models.piano import PianoCreateInput, PianoUpdateInput, PianoDeleteInput
-from app.core.config import PERCORSI_SERVICE_URL
+from app.core.config import PERCORSI_SERVICE_URL, ANAGRAFICA_SERVICE_URL, FORECAST_SERVICE_URL, OPERATIVO_SERVICE_URL
 from app.core.operativo_client import (
     delegation_enabled as operativo_delegation_enabled,
     get_json as operativo_get_json,
@@ -18,95 +17,213 @@ import requests
 
 def compute_assignments(data: dict):
     inp = AssignmentRequest(**data) if not isinstance(data, AssignmentRequest) else data
-    conn = get_connection(); cur = conn.cursor()
-    try:
-        # retrieve routes in window
-        cur.execute("""
-            SELECT c.id, c.nome, c.tratta_id, c.orario_partenza_schedulato FROM corsa c WHERE c.orario_partenza_schedulato >= %s AND c.orario_partenza_schedulato <= %s ORDER BY c.orario_partenza_schedulato;
-        """, (inp.start, inp.end))
-        routes_rows = cur.fetchall()
+    def _safe_get(base_url: str, path: str, timeout: float = 10.0):
+        url = f"{base_url.rstrip('/')}{path}"
+        try:
+            resp = requests.get(url, timeout=timeout)
+        except requests.RequestException as exc:
+            raise HTTPException(503, f"Servizio interno non raggiungibile: {base_url}") from exc
 
-        # vascelli filter by id
-        cur.execute("SELECT id, nome, capacita_passeggeri FROM vascello")
-        v_rows = cur.fetchall()
-        vessels_all = [{"id": str(r[0]), "nome": r[1], "capacita_passeggeri": r[2]} for r in v_rows]
-        vessels_data = [v for v in vessels_all if v["id"] in inp.vessels]
-        if not vessels_data:
-            raise HTTPException(400, "Nessun vascello trovato corrispondente alla lista fornita")
+        if resp.status_code == 404:
+            return None
+        if resp.status_code >= 400:
+            raise HTTPException(503, f"Errore servizio interno ({base_url}): HTTP {resp.status_code}")
 
-        # ports and legs lookup
-        cur.execute("SELECT id, nome FROM porto")
-        ports = {str(r[0]): r[1] for r in cur.fetchall()}
-        cur.execute("SELECT id, porto_partenza_id, porto_arrivo_id FROM tratta")
-        legs = {str(r[0]): {"porto_partenza_id": str(r[1]), "porto_arrivo_id": str(r[2])} for r in cur.fetchall()}
+        try:
+            return resp.json()
+        except Exception as exc:
+            raise HTTPException(502, f"Risposta non valida dal servizio interno: {base_url}") from exc
 
-        routes_output = {}
-        
-        # Costruisci la lista di tutti gli input per l'ottimizzatore
-        opt_items = []
-        opt_items_mapping = []  # per mappare risultati a (route_id, vessel)
+    def _safe_post(base_url: str, path: str, payload: dict, timeout: float = 20.0):
+        url = f"{base_url.rstrip('/')}{path}"
+        try:
+            resp = requests.post(url, json=payload, timeout=timeout)
+        except requests.RequestException as exc:
+            raise HTTPException(503, f"Servizio interno non raggiungibile: {base_url}") from exc
 
-        for r in routes_rows:
-            route_id = str(r[0])
-            nome_corsa = r[1]
-            tratta_id = str(r[2])
-            orario_partenza = r[3]
-            if tratta_id not in legs:
-                continue
-            leg = legs[tratta_id]
-            porto_partenza_id = leg["porto_partenza_id"]
-            porto_arrivo_id = leg["porto_arrivo_id"]
+        if resp.status_code >= 400:
+            raise HTTPException(503, f"Errore servizio interno ({base_url}): HTTP {resp.status_code}")
 
-            routes_output[route_id] = {"nome_corsa": nome_corsa, "porto_partenza": ports.get(porto_partenza_id, "Unknown"), "porto_arrivo": ports.get(porto_arrivo_id, "Unknown"), "porto_partenza_id": porto_partenza_id, "porto_arrivo_id": porto_arrivo_id, "orario_partenza_schedulato": orario_partenza.isoformat(), "passeggeri_previsti": None, "KPI_assegnazione": {}}
+        if not resp.content:
+            return None
+        try:
+            return resp.json()
+        except Exception:
+            return None
 
-            # forecast
-            try:
-                forecast_req = PrevisioneRequest(biglietti_venduti_al_sample=10, festivo=False)
-                forecast = previsione_service.calcola_previsione(route_id, forecast_req)
-                ci = [forecast["dettagli"]["micro_finale_ci_95"][0], forecast["dettagli"]["micro_finale_ci_95"][1]]
-                routes_output[route_id]["passeggeri_previsti"] = ci
-            except Exception:
-                routes_output[route_id]["passeggeri_previsti"] = [0.0, 0.0]
+    def _parse_iso(value: str | None):
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except Exception:
+            return None
 
-            # Prepara input per ogni vessel
-            for vessel in vessels_data:
-                vessel_id = vessel["id"]
-                opt_items.append({
-                    "corsa_id": route_id,
-                    "vascello_id": vessel_id,
-                    "eps_time": inp.eps_time,
-                    "fake_data": inp.fake_data,
-                    "ve_min": 0.1,
-                    "tolerance": 1
-                })
-                opt_items_mapping.append((route_id, vessel))
+    start_dt = inp.start
+    end_dt = inp.end
+    if end_dt < start_dt:
+        raise HTTPException(400, "Intervallo temporale non valido")
 
-        # Chiamata unica all'ottimizzatore con tutti gli items
-        if opt_items:
-            from app.models.common import OttimizzatoreBatchInput, OttimizzatoreInput
-            batch_input = OttimizzatoreBatchInput(items=[OttimizzatoreInput(**item) for item in opt_items])
-            try:
-                ottimizzatore_service.ottimizzatore(batch_input)
-            except Exception:
-                raise
+    # 1) Vascelli richiesti
+    vessels_data = []
+    for vessel_id in inp.vessels:
+        vessel = _safe_get(ANAGRAFICA_SERVICE_URL, f"/internal/vascello/{vessel_id}")
+        if isinstance(vessel, dict):
+            vessels_data.append({
+                "id": str(vessel.get("id")),
+                "nome": vessel.get("nome"),
+                "capacita_passeggeri": vessel.get("capacita_passeggeri"),
+            })
+    if not vessels_data:
+        raise HTTPException(400, "Nessun vascello trovato corrispondente alla lista fornita")
 
-        # Recupera i KPI dai percorsi calcolati
-        for route_id, vessel in opt_items_mapping:
+    # 2) Corse nella finestra [start, end] (recupero per giorno + dettaglio)
+    corse = []
+    day = start_dt.date()
+    while day <= end_dt.date():
+        corse_giorno = _safe_get(OPERATIVO_SERVICE_URL, f"/internal/corsa/giorno?giorno={day.isoformat()}&solofuture=false")
+        if isinstance(corse_giorno, list):
+            for c in corse_giorno:
+                corsa_id = c.get("id") if isinstance(c, dict) else None
+                if not corsa_id:
+                    continue
+                detail = _safe_get(OPERATIVO_SERVICE_URL, f"/internal/corsa/id/{corsa_id}")
+                if not isinstance(detail, dict):
+                    continue
+                orario_dt = _parse_iso(detail.get("orario_partenza_schedulato"))
+                if orario_dt is None:
+                    continue
+                if start_dt <= orario_dt <= end_dt:
+                    detail["_orario_dt"] = orario_dt
+                    corse.append(detail)
+        day = day + timedelta(days=1)
+
+    corse.sort(key=lambda item: item.get("_orario_dt"))
+
+    port_cache = {}
+    tratta_cache = {}
+    routes_output = {}
+    opt_items = []
+    opt_items_mapping = []
+
+    # 3) Pre-forecast + preparazione input ottimizzatore
+    for corsa in corse:
+        route_id = str(corsa.get("id"))
+        nome_corsa = corsa.get("nome")
+        tratta_id = corsa.get("tratta_id")
+        orario_partenza_dt = corsa.get("_orario_dt")
+        if not route_id or not tratta_id or orario_partenza_dt is None:
+            continue
+
+        if tratta_id not in tratta_cache:
+            tratta_cache[tratta_id] = _safe_get(ANAGRAFICA_SERVICE_URL, f"/internal/tratta/{tratta_id}")
+        tratta = tratta_cache.get(tratta_id)
+        if not isinstance(tratta, dict):
+            continue
+
+        porto_partenza_id = str(tratta.get("porto_partenza_id"))
+        porto_arrivo_id = str(tratta.get("porto_arrivo_id"))
+
+        if porto_partenza_id not in port_cache:
+            port_cache[porto_partenza_id] = _safe_get(ANAGRAFICA_SERVICE_URL, f"/internal/porto/{porto_partenza_id}")
+        if porto_arrivo_id not in port_cache:
+            port_cache[porto_arrivo_id] = _safe_get(ANAGRAFICA_SERVICE_URL, f"/internal/porto/{porto_arrivo_id}")
+
+        porto_partenza = port_cache.get(porto_partenza_id) or {}
+        porto_arrivo = port_cache.get(porto_arrivo_id) or {}
+
+        routes_output[route_id] = {
+            "nome_corsa": nome_corsa,
+            "porto_partenza": porto_partenza.get("nome", "Unknown"),
+            "porto_arrivo": porto_arrivo.get("nome", "Unknown"),
+            "porto_partenza_id": porto_partenza_id,
+            "porto_arrivo_id": porto_arrivo_id,
+            "orario_partenza_schedulato": orario_partenza_dt.isoformat(),
+            "passeggeri_previsti": [0.0, 0.0],
+            "KPI_assegnazione": {},
+        }
+
+        try:
+            forecast = _safe_post(
+                FORECAST_SERVICE_URL,
+                f"/internal/previsione/corsa/{route_id}/calcola",
+                {"biglietti_venduti_al_sample": 10, "festivo": False},
+                timeout=60.0,
+            )
+            if isinstance(forecast, dict):
+                dettagli = forecast.get("dettagli") or {}
+                ci = dettagli.get("micro_finale_ci_95")
+                if isinstance(ci, list) and len(ci) >= 2:
+                    routes_output[route_id]["passeggeri_previsti"] = [ci[0], ci[1]]
+        except Exception:
+            pass
+
+        for vessel in vessels_data:
             vessel_id = vessel["id"]
-            vessel_nome = vessel["nome"]
-            vessel_cap = vessel.get("capacita_passeggeri")
-            
-            cur.execute("SELECT id, tempo_percorrenza_min, consumo, comfort FROM percorso WHERE id_corsa = %s AND vascello_id = %s ORDER BY created_at DESC LIMIT 1", (route_id, vessel_id))
-            per = cur.fetchone()
-            if not per:
-                continue
-            percorso_id, tempo_percorrenza_obj, consumo, comfort = per
-            orario_arrivo_previsto = datetime.fromisoformat(routes_output[route_id]["orario_partenza_schedulato"]) + tempo_percorrenza_obj
-            routes_output[route_id]["KPI_assegnazione"][vessel_id] = {"nome_vascello": vessel_nome, "consumo": consumo, "comfort": comfort, "tempo_percorrenza_sec": tempo_percorrenza_obj.total_seconds(), "orario_arrivo_previsto": orario_arrivo_previsto.isoformat(), "capacita_passeggeri": vessel_cap}
+            opt_items.append({
+                "corsa_id": route_id,
+                "vascello_id": vessel_id,
+                "eps_time": inp.eps_time,
+                "fake_data": inp.fake_data,
+                "ve_min": 0.1,
+                "tolerance": 1,
+            })
+            opt_items_mapping.append((route_id, vessel))
 
-        return routes_output
-    finally:
-        cur.close(); conn.close()
+    if opt_items:
+        from app.models.common import OttimizzatoreBatchInput, OttimizzatoreInput
+
+        batch_input = OttimizzatoreBatchInput(items=[OttimizzatoreInput(**item) for item in opt_items])
+        ottimizzatore_service.ottimizzatore(batch_input)
+
+    # 4) KPI da percorsi calcolati (via microservizio percorsi)
+    for route_id, vessel in opt_items_mapping:
+        if route_id not in routes_output:
+            continue
+        vessel_id = vessel["id"]
+        vessel_nome = vessel["nome"]
+        vessel_cap = vessel.get("capacita_passeggeri")
+
+        percorso_resp = _safe_get(
+            PERCORSI_SERVICE_URL,
+            f"/internal/percorso/by_corsa/{route_id}?order_by=created_at&mode=DESC&limit=1&vascello_id={vessel_id}",
+        )
+        if not isinstance(percorso_resp, dict):
+            continue
+        percorsi = percorso_resp.get("percorsi") or []
+        if not percorsi:
+            continue
+        percorso = percorsi[0]
+
+        tempo_percorrenza_min = percorso.get("tempo_percorrenza")
+        consumo = percorso.get("consumo")
+        comfort = percorso.get("comfort")
+
+        tempo_percorrenza_sec = None
+        orario_arrivo_previsto = percorso.get("orario_arrivo_previsto")
+        try:
+            tempo_percorrenza_sec = float(tempo_percorrenza_min) * 60.0 if tempo_percorrenza_min is not None else None
+        except Exception:
+            tempo_percorrenza_sec = None
+
+        if not orario_arrivo_previsto and tempo_percorrenza_min is not None:
+            try:
+                start_iso = routes_output[route_id]["orario_partenza_schedulato"]
+                start_dt_obj = datetime.fromisoformat(start_iso)
+                orario_arrivo_previsto = (start_dt_obj + timedelta(minutes=float(tempo_percorrenza_min))).isoformat()
+            except Exception:
+                orario_arrivo_previsto = None
+
+        routes_output[route_id]["KPI_assegnazione"][vessel_id] = {
+            "nome_vascello": vessel_nome,
+            "consumo": consumo,
+            "comfort": comfort,
+            "tempo_percorrenza_sec": tempo_percorrenza_sec,
+            "orario_arrivo_previsto": orario_arrivo_previsto,
+            "capacita_passeggeri": vessel_cap,
+        }
+
+    return routes_output
 
 
 def crea_piano(data: dict):
@@ -384,99 +501,141 @@ def get_percorsi_compatibili(corsa_id: str, percorsi_id: list):
 
 
 def check_validita_percorsi(percorso_1_id: str, percorso_2_id: str):
-    conn = get_connection(); cur = conn.cursor()
-    try:
-        # Retrieve both routes with their corsa and vascello info
-        cur.execute("""
-            SELECT p.id, p.id_corsa, p.vascello_id, c.orario_partenza_schedulato, c.orario_arrivo_max, c.nome
-            FROM percorso p
-            JOIN corsa c ON p.id_corsa = c.id
-            WHERE p.id IN (%s, %s);
-        """, (percorso_1_id, percorso_2_id))
-        
-        rows = cur.fetchall()
-        if len(rows) < 2:
-            raise HTTPException(status_code=404, detail="Uno o entrambi i percorsi non trovati")
-        
-        percorso_1 = rows[0]
-        percorso_2 = rows[1]
-        
-        # Check 1: I percorsi non devono essere della stessa corsa
-        if percorso_1[1] == percorso_2[1]:
-            return {
-                "valido": False,
-                "percorso_1": {
-                    "id": percorso_1[0],
-                    "corsa_id": percorso_1[1],
-                    "vascello_id": percorso_1[2],
-                    "orario_partenza_schedulato": percorso_1[3].isoformat() if percorso_1[3] else None,
-                    "orario_arrivo_max": percorso_1[4].isoformat() if percorso_1[4] else None,
-                    "nome_corsa": percorso_1[5]
-                },
-                "percorso_2": {
-                    "id": percorso_2[0],
-                    "corsa_id": percorso_2[1],
-                    "vascello_id": percorso_2[2],
-                    "orario_partenza_schedulato": percorso_2[3].isoformat() if percorso_2[3] else None,
-                    "orario_arrivo_max": percorso_2[4].isoformat() if percorso_2[4] else None,
-                    "nome_corsa": percorso_2[5]
-                },
-                "messaggio": "Invalidità: i due percorsi appartengono alla stessa corsa"
-            }
-        
-        # Check 2: I vascelli devono essere uguali (se diversi è valido a priori)
-        if percorso_1[2] != percorso_2[2]:
-            return {
-                "valido": True,
-                "percorso_1": {
-                    "id": percorso_1[0],
-                    "corsa_id": percorso_1[1],
-                    "vascello_id": percorso_1[2],
-                    "orario_partenza_schedulato": percorso_1[3].isoformat() if percorso_1[3] else None,
-                    "orario_arrivo_max": percorso_1[4].isoformat() if percorso_1[4] else None,
-                    "nome_corsa": percorso_1[5]
-                },
-                "percorso_2": {
-                    "id": percorso_2[0],
-                    "corsa_id": percorso_2[1],
-                    "vascello_id": percorso_2[2],
-                    "orario_partenza_schedulato": percorso_2[3].isoformat() if percorso_2[3] else None,
-                    "orario_arrivo_max": percorso_2[4].isoformat() if percorso_2[4] else None,
-                    "nome_corsa": percorso_2[5]
-                },
-                "messaggio": "Validità a priori: i vascelli sono diversi - assegnazione sempre valida"
-            }
-        
-        # Ordina i percorsi per orario_partenza_schedulato per il check temporale
-        if percorso_1[3] > percorso_2[3]:
-            percorso_1, percorso_2 = percorso_2, percorso_1
-        
-        # Check 3: Validità temporale - arrival_max of first < departure of second
-        valido = percorso_1[4] < percorso_2[3]
-        messaggio = "Validità verificata: la prima corsa termina prima che inizi la seconda" if valido else "Validità fallita: la prima corsa non termina prima dell'inizio della seconda"
-        
+    def _parse_iso(value: str | None):
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except Exception:
+            return None
+
+    def _fetch_percorso(percorso_id: str):
+        try:
+            percorso = requests.get(
+                f"{PERCORSI_SERVICE_URL.rstrip('/')}/internal/percorso/{percorso_id}?include=corsa",
+                timeout=8.0,
+            )
+        except requests.RequestException as exc:
+            raise HTTPException(status_code=503, detail="Percorsi service non raggiungibile") from exc
+
+        if percorso.status_code == 404:
+            return None
+        if percorso.status_code >= 400:
+            raise HTTPException(status_code=503, detail=f"Errore Percorsi service: HTTP {percorso.status_code}")
+
+        try:
+            data = percorso.json()
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail="Risposta non valida dal Percorsi service") from exc
+
+        corsa_id = data.get("corsa_id")
+        vascello_id = data.get("vascello_id")
+        corsa_obj = data.get("corsa") if isinstance(data.get("corsa"), dict) else None
+
+        if corsa_obj is None and corsa_id:
+            try:
+                corsa_obj = operativo_get_json(f"/internal/corsa/id/{corsa_id}")
+            except OperativoDelegationError as exc:
+                raise HTTPException(status_code=503, detail="Operativo service unavailable") from exc
+
+        orario_partenza = _parse_iso((corsa_obj or {}).get("orario_partenza_schedulato"))
+        orario_arrivo_max = _parse_iso((corsa_obj or {}).get("orario_arrivo_max"))
+
         return {
-            "valido": valido,
+            "id": str(data.get("id") or data.get("percorso_id") or percorso_id),
+            "corsa_id": str(corsa_id) if corsa_id else None,
+            "vascello_id": str(vascello_id) if vascello_id else None,
+            "orario_partenza_schedulato": orario_partenza,
+            "orario_arrivo_max": orario_arrivo_max,
+            "nome_corsa": (corsa_obj or {}).get("nome"),
+        }
+
+    percorso_1 = _fetch_percorso(percorso_1_id)
+    percorso_2 = _fetch_percorso(percorso_2_id)
+    if percorso_1 is None or percorso_2 is None:
+        raise HTTPException(status_code=404, detail="Uno o entrambi i percorsi non trovati")
+
+    if percorso_1["corsa_id"] == percorso_2["corsa_id"]:
+        return {
+            "valido": False,
             "percorso_1": {
-                "id": percorso_1[0],
-                "corsa_id": percorso_1[1],
-                "vascello_id": percorso_1[2],
-                "orario_partenza_schedulato": percorso_1[3].isoformat() if percorso_1[3] else None,
-                "orario_arrivo_max": percorso_1[4].isoformat() if percorso_1[4] else None,
-                "nome_corsa": percorso_1[5]
+                "id": percorso_1["id"],
+                "corsa_id": percorso_1["corsa_id"],
+                "vascello_id": percorso_1["vascello_id"],
+                "orario_partenza_schedulato": percorso_1["orario_partenza_schedulato"].isoformat() if percorso_1["orario_partenza_schedulato"] else None,
+                "orario_arrivo_max": percorso_1["orario_arrivo_max"].isoformat() if percorso_1["orario_arrivo_max"] else None,
+                "nome_corsa": percorso_1["nome_corsa"],
             },
             "percorso_2": {
-                "id": percorso_2[0],
-                "corsa_id": percorso_2[1],
-                "vascello_id": percorso_2[2],
-                "orario_partenza_schedulato": percorso_2[3].isoformat() if percorso_2[3] else None,
-                "orario_arrivo_max": percorso_2[4].isoformat() if percorso_2[4] else None,
-                "nome_corsa": percorso_2[5]
+                "id": percorso_2["id"],
+                "corsa_id": percorso_2["corsa_id"],
+                "vascello_id": percorso_2["vascello_id"],
+                "orario_partenza_schedulato": percorso_2["orario_partenza_schedulato"].isoformat() if percorso_2["orario_partenza_schedulato"] else None,
+                "orario_arrivo_max": percorso_2["orario_arrivo_max"].isoformat() if percorso_2["orario_arrivo_max"] else None,
+                "nome_corsa": percorso_2["nome_corsa"],
             },
-            "messaggio": messaggio
+            "messaggio": "Invalidità: i due percorsi appartengono alla stessa corsa",
         }
-    finally:
-        conn.close()
+
+    if percorso_1["vascello_id"] != percorso_2["vascello_id"]:
+        return {
+            "valido": True,
+            "percorso_1": {
+                "id": percorso_1["id"],
+                "corsa_id": percorso_1["corsa_id"],
+                "vascello_id": percorso_1["vascello_id"],
+                "orario_partenza_schedulato": percorso_1["orario_partenza_schedulato"].isoformat() if percorso_1["orario_partenza_schedulato"] else None,
+                "orario_arrivo_max": percorso_1["orario_arrivo_max"].isoformat() if percorso_1["orario_arrivo_max"] else None,
+                "nome_corsa": percorso_1["nome_corsa"],
+            },
+            "percorso_2": {
+                "id": percorso_2["id"],
+                "corsa_id": percorso_2["corsa_id"],
+                "vascello_id": percorso_2["vascello_id"],
+                "orario_partenza_schedulato": percorso_2["orario_partenza_schedulato"].isoformat() if percorso_2["orario_partenza_schedulato"] else None,
+                "orario_arrivo_max": percorso_2["orario_arrivo_max"].isoformat() if percorso_2["orario_arrivo_max"] else None,
+                "nome_corsa": percorso_2["nome_corsa"],
+            },
+            "messaggio": "Validità a priori: i vascelli sono diversi - assegnazione sempre valida",
+        }
+
+    if (
+        percorso_1["orario_partenza_schedulato"]
+        and percorso_2["orario_partenza_schedulato"]
+        and percorso_1["orario_partenza_schedulato"] > percorso_2["orario_partenza_schedulato"]
+    ):
+        percorso_1, percorso_2 = percorso_2, percorso_1
+
+    valido = False
+    if percorso_1["orario_arrivo_max"] and percorso_2["orario_partenza_schedulato"]:
+        valido = percorso_1["orario_arrivo_max"] < percorso_2["orario_partenza_schedulato"]
+
+    messaggio = (
+        "Validità verificata: la prima corsa termina prima che inizi la seconda"
+        if valido
+        else "Validità fallita: la prima corsa non termina prima dell'inizio della seconda"
+    )
+
+    return {
+        "valido": valido,
+        "percorso_1": {
+            "id": percorso_1["id"],
+            "corsa_id": percorso_1["corsa_id"],
+            "vascello_id": percorso_1["vascello_id"],
+            "orario_partenza_schedulato": percorso_1["orario_partenza_schedulato"].isoformat() if percorso_1["orario_partenza_schedulato"] else None,
+            "orario_arrivo_max": percorso_1["orario_arrivo_max"].isoformat() if percorso_1["orario_arrivo_max"] else None,
+            "nome_corsa": percorso_1["nome_corsa"],
+        },
+        "percorso_2": {
+            "id": percorso_2["id"],
+            "corsa_id": percorso_2["corsa_id"],
+            "vascello_id": percorso_2["vascello_id"],
+            "orario_partenza_schedulato": percorso_2["orario_partenza_schedulato"].isoformat() if percorso_2["orario_partenza_schedulato"] else None,
+            "orario_arrivo_max": percorso_2["orario_arrivo_max"].isoformat() if percorso_2["orario_arrivo_max"] else None,
+            "nome_corsa": percorso_2["nome_corsa"],
+        },
+        "messaggio": messaggio,
+    }
 
 
 def valida_piano(piano_id: str):

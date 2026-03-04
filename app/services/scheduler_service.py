@@ -2,13 +2,12 @@
 Scheduler service - calls the external scheduling microservice.
 """
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Dict, Any
 
 from fastapi import HTTPException
 
-from app.core.database import get_connection
-from app.core.config import SCHEDULER_URL
+from app.core.config import SCHEDULER_URL, OPERATIVO_SERVICE_URL, ANAGRAFICA_SERVICE_URL, PERCORSI_SERVICE_URL, FORECAST_SERVICE_URL
 from app.models.common import (
     SchedulingInput,
     SchedulingResponse,
@@ -48,125 +47,147 @@ def get_routes_for_day(giorno: str, solo_future: bool = True) -> List[Dict[str, 
     Get all routes (percorsi) for a given day.
     Returns route data including corsa, vessel, and timing info.
     """
-    conn = get_connection()
-    cur = conn.cursor()
-    
-    try:
-        # Build the query based on solo_future flag
-        if solo_future:
-            query = """
-                SELECT 
-                    p.id as percorso_id,
-                    p.id_corsa as corsa_id,
-                    c.nome as corsa_name,
-                    p.vascello_id,
-                    v.nome as vessel_name,
-                    v.capacita_passeggeri as capacity,
-                    t.porto_partenza_id as origin,
-                    t.porto_arrivo_id as destination,
-                    c.orario_partenza_schedulato as start_dt,
-                    c.orario_partenza_schedulato + p.tempo_percorrenza_min as end_dt,
-                    p.consumo,
-                    p.comfort,
-                    COALESCE(pv.confidenza_min, 0) as pax_min,
-                    COALESCE(pv.confidenza_max, 0) as pax_max
-                FROM percorso p
-                JOIN corsa c ON c.id = p.id_corsa
-                JOIN tratta t ON t.id = c.tratta_id
-                JOIN vascello v ON v.id = p.vascello_id
-                LEFT JOIN previsione_domanda pv ON pv.id = c.previsione_domanda_id
-                WHERE DATE(c.orario_partenza_schedulato) = %s
-                  AND c.orario_partenza_schedulato > NOW()
-                ORDER BY c.orario_partenza_schedulato
-            """
-        else:
-            query = """
-                SELECT 
-                    p.id as percorso_id,
-                    p.id_corsa as corsa_id,
-                    c.nome as corsa_name,
-                    p.vascello_id,
-                    v.nome as vessel_name,
-                    v.capacita_passeggeri as capacity,
-                    t.porto_partenza_id as origin,
-                    t.porto_arrivo_id as destination,
-                    c.orario_partenza_schedulato as start_dt,
-                    c.orario_partenza_schedulato + p.tempo_percorrenza_min as end_dt,
-                    p.consumo,
-                    p.comfort,
-                    COALESCE(pv.confidenza_min, 0) as pax_min,
-                    COALESCE(pv.confidenza_max, 0) as pax_max
-                FROM percorso p
-                JOIN corsa c ON c.id = p.id_corsa
-                JOIN tratta t ON t.id = c.tratta_id
-                JOIN vascello v ON v.id = p.vascello_id
-                LEFT JOIN previsione_domanda pv ON pv.id = c.previsione_domanda_id
-                WHERE DATE(c.orario_partenza_schedulato) = %s
-                ORDER BY c.orario_partenza_schedulato
-            """
-        
-        cur.execute(query, (giorno,))
-        rows = cur.fetchall()
-        
-        routes = []
-        for row in rows:
-            (percorso_id, corsa_id, corsa_name, vascello_id, vessel_name,
-             capacity, origin, destination, start_dt, end_dt,
-             consumo, comfort, pax_min, pax_max) = row
-            
+    def _get_json(base_url: str, path: str, timeout: float = 12.0):
+        url = f"{base_url.rstrip('/')}{path}"
+        try:
+            response = requests.get(url, timeout=timeout)
+        except requests.RequestException as exc:
+            raise HTTPException(503, f"Servizio interno non raggiungibile: {base_url}") from exc
+
+        if response.status_code == 404:
+            return None
+        if response.status_code >= 400:
+            raise HTTPException(503, f"Errore servizio interno ({base_url}): HTTP {response.status_code}")
+
+        try:
+            return response.json()
+        except Exception as exc:
+            raise HTTPException(502, f"Risposta non valida dal servizio interno: {base_url}") from exc
+
+    def _parse_iso(value: str | None):
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except Exception:
+            return None
+
+    corse = _get_json(OPERATIVO_SERVICE_URL, f"/internal/corsa/giorno?giorno={giorno}&solofuture={'true' if solo_future else 'false'}")
+    if not isinstance(corse, list):
+        return []
+
+    tratta_cache: Dict[str, Dict[str, Any] | None] = {}
+    vascello_cache: Dict[str, Dict[str, Any] | None] = {}
+    routes: List[Dict[str, Any]] = []
+
+    for corsa_item in corse:
+        corsa_id = corsa_item.get("id") if isinstance(corsa_item, dict) else None
+        if not corsa_id:
+            continue
+
+        corsa = _get_json(OPERATIVO_SERVICE_URL, f"/internal/corsa/id/{corsa_id}")
+        if not isinstance(corsa, dict):
+            continue
+
+        tratta_id = str(corsa.get("tratta_id")) if corsa.get("tratta_id") else None
+        if not tratta_id:
+            continue
+
+        if tratta_id not in tratta_cache:
+            tratta_cache[tratta_id] = _get_json(ANAGRAFICA_SERVICE_URL, f"/internal/tratta/{tratta_id}")
+        tratta = tratta_cache.get(tratta_id)
+        if not isinstance(tratta, dict):
+            continue
+
+        previsione = corsa.get("previsione") if isinstance(corsa.get("previsione"), dict) else None
+        if previsione is None:
+            previsione = _get_json(FORECAST_SERVICE_URL, f"/internal/previsione/corsa/{corsa_id}/latest")
+            if not isinstance(previsione, dict):
+                previsione = None
+
+        percorsi = _get_json(
+            PERCORSI_SERVICE_URL,
+            f"/internal/percorso/by_corsa/{corsa_id}?order_by=created_at&mode=DESC&limit=500",
+        )
+        if not isinstance(percorsi, dict):
+            continue
+
+        for p in (percorsi.get("percorsi") or []):
+            if not isinstance(p, dict):
+                continue
+            vascello_id = p.get("vascello_id")
+            if not vascello_id:
+                continue
+
+            vessel_id = str(vascello_id)
+            if vessel_id not in vascello_cache:
+                vascello_cache[vessel_id] = _get_json(ANAGRAFICA_SERVICE_URL, f"/internal/vascello/{vessel_id}")
+            vessel = vascello_cache.get(vessel_id)
+            if not isinstance(vessel, dict):
+                continue
+
+            start_dt = _parse_iso(corsa.get("orario_partenza_schedulato") or p.get("orario_partenza_schedulato"))
+            end_dt = _parse_iso(p.get("orario_arrivo_previsto"))
+            if end_dt is None and start_dt is not None and p.get("tempo_percorrenza") is not None:
+                try:
+                    end_dt = start_dt + timedelta(minutes=float(p.get("tempo_percorrenza")))
+                except Exception:
+                    end_dt = None
+
             routes.append({
-                "route_id": str(percorso_id),
+                "route_id": str(p.get("id") or p.get("percorso_id")),
                 "corsa_id": str(corsa_id),
-                "corsa_name": corsa_name,
-                "vessel_id": str(vascello_id),
-                "vessel_name": vessel_name,
-                "capacity": float(capacity) if capacity else 100.0,
-                "origin": str(origin),
-                "destination": str(destination),
+                "corsa_name": corsa.get("nome"),
+                "vessel_id": vessel_id,
+                "vessel_name": vessel.get("nome"),
+                "capacity": float(vessel.get("capacita_passeggeri") or 100.0),
+                "origin": str(tratta.get("porto_partenza_id")),
+                "destination": str(tratta.get("porto_arrivo_id")),
                 "start_dt": start_dt.isoformat() if start_dt else None,
                 "end_dt": end_dt.isoformat() if end_dt else None,
-                "consumo": float(consumo) if consumo else 0.0,
-                "comfort": float(comfort) if comfort else 0.0,
-                "pax_min": float(pax_min) if pax_min else 0.0,
-                "pax_max": float(pax_max) if pax_max else 0.0
+                "consumo": float(p.get("consumo") or 0.0),
+                "comfort": float(p.get("comfort") or 0.0),
+                "pax_min": float((previsione or {}).get("confidenza_min") or 0.0),
+                "pax_max": float((previsione or {}).get("confidenza_max") or 0.0),
             })
-        
-        return routes
-        
-    finally:
-        cur.close()
-        conn.close()
+
+    return routes
 
 
 def get_all_vessels() -> List[Dict[str, Any]]:
     """
     Get all available vessels from the database.
     """
-    conn = get_connection()
-    cur = conn.cursor()
-    
     try:
-        cur.execute("""
-            SELECT id, nome, capacita_passeggeri
-            FROM vascello
-            ORDER BY nome
-        """)
-        rows = cur.fetchall()
-        
-        vessels = []
-        for row in rows:
-            vessel_id, name, capacity = row
-            vessels.append({
-                "vessel_id": str(vessel_id),
-                "name": name,
-                "capacity": float(capacity) if capacity else 100.0
-            })
-        
-        return vessels
-        
-    finally:
-        cur.close()
-        conn.close()
+        response = requests.get(f"{ANAGRAFICA_SERVICE_URL.rstrip('/')}/internal/vascello/lista", timeout=10)
+    except requests.RequestException as exc:
+        raise HTTPException(503, "Anagrafica service unavailable") from exc
+
+    if response.status_code >= 400:
+        raise HTTPException(503, f"Anagrafica service error: HTTP {response.status_code}")
+
+    try:
+        rows = response.json()
+    except Exception as exc:
+        raise HTTPException(502, "Invalid response from Anagrafica service") from exc
+
+    if not isinstance(rows, list):
+        return []
+
+    vessels = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        vessel_id = row.get("id")
+        if not vessel_id:
+            continue
+        vessels.append({
+            "vessel_id": str(vessel_id),
+            "name": row.get("nome"),
+            "capacity": float(row.get("capacita_passeggeri") or 100.0),
+        })
+
+    return vessels
 
 
 def schedule_by_day(data: SchedulingByDayInput) -> SchedulingResponse:

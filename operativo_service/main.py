@@ -41,10 +41,14 @@ def _tratta_nome(tratta_id: str) -> str | None:
     return tratta.get("nome")
 
 
-def _previsione(previsione_id: str | None):
-    if not previsione_id:
-        return None
-    return _get_json(FORECAST_SERVICE_URL, f"/internal/previsione/{previsione_id}")
+def _previsione(previsione_id: str | None, corsa_id: str | None = None):
+    if previsione_id:
+        previsione = _get_json(FORECAST_SERVICE_URL, f"/internal/previsione/{previsione_id}")
+        if previsione:
+            return previsione
+    if corsa_id:
+        return _get_json(FORECAST_SERVICE_URL, f"/internal/previsione/corsa/{corsa_id}/latest")
+    return None
 
 
 def _percorso_meta(percorso_id: str | None):
@@ -76,14 +80,29 @@ def lista_corse():
             ORDER BY c.orario_partenza_schedulato;
         """)
         rows = cur.fetchall()
+
+        # Cache tratta and previsione lookups to avoid N+1 HTTP calls
+        tratta_cache: dict[str, str | None] = {}
+        previsione_cache: dict[str, dict | None] = {}
+
         out = []
         for r in rows:
-            tratta_nome = _tratta_nome(str(r[2]))
-            prev = _previsione(str(r[4])) if r[4] else None
+            tratta_id = str(r[2])
+            corsa_id = str(r[0])
+
+            if tratta_id not in tratta_cache:
+                tratta_cache[tratta_id] = _tratta_nome(tratta_id)
+            tratta_nome = tratta_cache[tratta_id]
+
+            prev_key = str(r[4]) if r[4] else corsa_id
+            if prev_key not in previsione_cache:
+                previsione_cache[prev_key] = _previsione(str(r[4]) if r[4] else None, corsa_id)
+            prev = previsione_cache[prev_key]
+
             corsa_obj = {
-                "id": str(r[0]),
+                "id": corsa_id,
                 "nome": r[1],
-                "tratta_id": str(r[2]),
+                "tratta_id": tratta_id,
                 "tratta_nome": tratta_nome,
                 "orario_partenza_schedulato": r[3].isoformat(),
                 "previsione_domanda_id": str(r[4]) if r[4] else None,
@@ -123,7 +142,7 @@ def get_corsa(corsa_id: str):
             raise HTTPException(404, "Corsa non trovata")
 
         tratta_nome = _tratta_nome(str(row[2]))
-        prev = _previsione(str(row[4])) if row[4] else None
+        prev = _previsione(str(row[4]) if row[4] else None, str(row[0]))
 
         corsa = {
             "id": str(row[0]),
@@ -194,29 +213,93 @@ def get_corse_by_giorno(
         cur.execute(query, (giorno_date,))
         rows = cur.fetchall()
 
+        # Cache tratta and previsione lookups
+        tratta_cache: dict[str, str | None] = {}
+        previsione_cache: dict[str, dict | None] = {}
+
         results = []
         for r in rows:
+            tratta_id = str(r[2])
+            corsa_id = str(r[0])
+
+            if tratta_id not in tratta_cache:
+                tratta_cache[tratta_id] = _tratta_nome(tratta_id)
+
             item = {
-                "id": str(r[0]),
-                "tratta": _tratta_nome(str(r[2])),
+                "id": corsa_id,
+                "tratta": tratta_cache[tratta_id],
                 "orario": r[1].strftime("%H:%M"),
-                "tratta_id": str(r[2]),
+                "tratta_id": tratta_id,
                 "nome": str(r[3]),
                 "orario_arrivo_max": r[4].strftime("%H:%M") if r[4] else None,
                 "previsione": None,
             }
-            if r[5]:
-                prev = _previsione(str(r[5]))
-                if prev:
-                    item["previsione"] = {
-                        "id": prev.get("id"),
-                        "passeggeri_stimati": prev.get("passeggeri_stimati"),
-                        "confidenza_min": prev.get("confidenza_min"),
-                        "confidenza_max": prev.get("confidenza_max"),
-                        "created_at": prev.get("created_at"),
-                    }
+
+            prev_key = str(r[5]) if r[5] else corsa_id
+            if prev_key not in previsione_cache:
+                previsione_cache[prev_key] = _previsione(str(r[5]) if r[5] else None, corsa_id)
+            prev = previsione_cache[prev_key]
+
+            if prev:
+                item["previsione"] = {
+                    "id": prev.get("id"),
+                    "passeggeri_stimati": prev.get("passeggeri_stimati"),
+                    "confidenza_min": prev.get("confidenza_min"),
+                    "confidenza_max": prev.get("confidenza_max"),
+                    "created_at": prev.get("created_at"),
+                }
             results.append(item)
         return results
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.get("/internal/dashboard/corse")
+def dashboard_corse():
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT c.id, c.nome, c.tratta_id, c.orario_partenza_schedulato, c.previsione_domanda_id
+            FROM corsa c
+            ORDER BY c.orario_partenza_schedulato;
+            """
+        )
+        rows = cur.fetchall()
+
+        # Cache tratta lookups to avoid N+1 HTTP calls
+        tratta_cache: dict[str, str | None] = {}
+        previsione_cache: dict[str, dict | None] = {}
+
+        out = []
+        for r in rows:
+            corsa_id = str(r[0])
+            tratta_id = str(r[2])
+
+            if tratta_id not in tratta_cache:
+                tratta_cache[tratta_id] = _tratta_nome(tratta_id)
+            tratta_nome = tratta_cache[tratta_id]
+
+            prev_key = str(r[4]) if r[4] else corsa_id
+            if prev_key not in previsione_cache:
+                previsione_cache[prev_key] = _previsione(str(r[4]) if r[4] else None, corsa_id)
+            prev = previsione_cache[prev_key]
+
+            out.append(
+                {
+                    "corsa_id": corsa_id,
+                    "corsa_nome": r[1],
+                    "tratta_id": tratta_id,
+                    "tratta_nome": tratta_nome,
+                    "orario": r[3].isoformat() if r[3] else None,
+                    "passeggeri": prev.get("passeggeri_stimati") if isinstance(prev, dict) else None,
+                    "ci_min": prev.get("confidenza_min") if isinstance(prev, dict) else None,
+                    "ci_max": prev.get("confidenza_max") if isinstance(prev, dict) else None,
+                }
+            )
+        return out
     finally:
         cur.close()
         conn.close()

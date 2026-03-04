@@ -4,7 +4,14 @@ import psycopg2
 
 DB_CONN = os.getenv("ALERTING_DB_CONN", "dbname=alerting_db user=postgres password=admin host=localhost")
 
-app = FastAPI(title="Alerting Internal Service", version="0.1.0")
+app = FastAPI(
+    title="Alerting Internal Service",
+    version="0.1.0",
+    description=(
+        "Microservizio interno per la consultazione degli allarmi operativi. "
+        "Espone endpoint di health e lista allarmi, leggendo i dati dal database alerting_db."
+    ),
+)
 
 
 def get_connection():

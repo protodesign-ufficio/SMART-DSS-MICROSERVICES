@@ -34,6 +34,7 @@ services:
       ALERTING_SERVICE_URL: "http://alerting:8075"
       ENABLE_ALERTING_DELEGATION: "true"
       ENABLE_ALERTING_FALLBACK: "false"
+      WEATHER_SERVICE_URL: "http://weather:8076"
     depends_on:
       - service
       - anagrafica
@@ -41,6 +42,7 @@ services:
       - percorsi
       - forecast
       - alerting
+      - weather
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -60,10 +62,28 @@ services:
       - "18090:8090"
     environment:
       HDF5_USE_FILE_LOCKING: "FALSE"  
-      COPERNICUSMARINE_SERVICE_USERNAME: "sriccardi"
-      COPERNICUSMARINE_SERVICE_PASSWORD: "Napoli1926"
+      WEATHER_SERVICE_URL: "http://weather:8076"
     volumes:
       - ./copernicus-data:/app/copernicus-data
+    depends_on:
+      - weather
+
+  weather:
+    build:
+      context: .
+      dockerfile: Dockerfile.weather
+    ports:
+      - "18076:8076"
+    environment:
+      COPERNICUSMARINE_SERVICE_USERNAME: "sriccardi"
+      COPERNICUSMARINE_SERVICE_PASSWORD: "Napoli1926"
+      WEATHER_DATA_DIR: "/app/copernicus-data"
+      WEATHER_DB_CONN: "dbname=weather_db user=postgres password=admin host=host.docker.internal"
+      WEATHER_LAYER_CACHE_TTL_MIN: "120"
+    volumes:
+      - ./copernicus-data:/app/copernicus-data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   scheduler:
     build:

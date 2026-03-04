@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.routers import (
     porto, tratta, corsa, vascello, percorso,
     pianificazione, piano_operativo, simulazione, config as config_router,
-    assegnazione, deadhead, replanning, allarme
+    assegnazione, deadhead, replanning, allarme, weather
 )
 from app.core.config import TAGS_METADATA
 from app.core.scheduler import start_scheduler, shutdown_scheduler
@@ -207,6 +207,12 @@ async def custom_swagger_ui_html():
     html_content = html_content.replace('</body>', f'{custom_css}</body>')
     return HTMLResponse(content=html_content)
 
+@app.get("/health", tags=["Sistema"], summary="Health check del gateway",
+         description="Verifica che il gateway API sia operativo.")
+async def health():
+    return {"status": "ok", "service": "gateway"}
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -229,5 +235,6 @@ app.include_router(config_router.router)
 app.include_router(deadhead.router)
 app.include_router(replanning.router)
 app.include_router(allarme.router)
+app.include_router(weather.router)
 
 

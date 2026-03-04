@@ -2,6 +2,8 @@ from fastapi import APIRouter, HTTPException, Query, Path
 from typing import List, Optional
 from app.core.database import get_connection
 from app.core.operativo_client import delegation_enabled as operativo_delegation_enabled, get_json as operativo_get_json, post_json as operativo_post_json, OperativoDelegationError
+from app.core.anagrafica_client import get_json as anagrafica_get_json
+from app.core.percorsi_client import get_json as percorsi_get_json, PercorsiDelegationError
 from app.core.forecast_client import delegation_enabled as forecast_delegation_enabled, post_json as forecast_post_json, ForecastDelegationError
 from app.core.config import ENABLE_FORECAST_FALLBACK, ENABLE_OPERATIVO_FALLBACK
 from app.models.corsa import (
@@ -17,6 +19,25 @@ ALLOWED_INCLUDES_CORSA = {"tratta", "percorsi"}
 def _handle_operativo_fallback(exc: Exception) -> None:
     if not ENABLE_OPERATIVO_FALLBACK:
         raise HTTPException(status_code=503, detail="Operativo service unavailable") from exc
+
+
+def _load_percorsi_for_corsa(corsa_id: str):
+    try:
+        payload = percorsi_get_json(
+            f"/internal/percorso/by_corsa/{corsa_id}?order_by=created_at&mode=ASC&limit=500"
+        )
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            return []
+        raise
+    except PercorsiDelegationError as exc:
+        raise HTTPException(status_code=503, detail="Percorsi service unavailable") from exc
+
+    if isinstance(payload, dict):
+        percorsi = payload.get("percorsi")
+        if isinstance(percorsi, list):
+            return percorsi
+    return []
 
 
 @router.post(
@@ -156,7 +177,7 @@ def get_orari(tratta_id: str, data: str):
 def lista_corse():
     if operativo_delegation_enabled():
         try:
-            return operativo_get_json("/internal/corsa/lista")
+            return operativo_get_json("/internal/corsa/lista", timeout=60.0)
         except OperativoDelegationError as exc:
             _handle_operativo_fallback(exc)
 
@@ -235,6 +256,44 @@ def get_corsa(
             400,
             f"include non valido: {sorted(invalid)}. Ammessi: ['tratta','percorsi']"
         )
+
+    if operativo_delegation_enabled():
+        try:
+            delegated = operativo_get_json(f"/internal/corsa/id/{corsa_id}")
+            response = {
+                "corsa_id": str(delegated.get("id")),
+                "nome": delegated.get("nome"),
+                "orario_partenza_schedulato": delegated.get("orario_partenza_schedulato"),
+                "orario_arrivo_max": delegated.get("orario_arrivo_max"),
+                "previsione_domanda_id": delegated.get("previsione_domanda_id"),
+                "previsione": delegated.get("previsione"),
+            }
+
+            if "tratta" in includes:
+                tratta_id = delegated.get("tratta_id")
+                if tratta_id:
+                    try:
+                        tratta = anagrafica_get_json(f"/internal/tratta/{tratta_id}")
+                        if tratta:
+                            response["tratta"] = {
+                                "id": str(tratta.get("id")),
+                                "nome": tratta.get("nome"),
+                                "porto_partenza_id": str(tratta.get("porto_partenza_id")),
+                                "porto_arrivo_id": str(tratta.get("porto_arrivo_id")),
+                                "distanza_miglia": tratta.get("distanza_miglia"),
+                                "porti_intermedi": tratta.get("porti_intermedi"),
+                                "tratta_multiporto": tratta.get("tratta_multiporto"),
+                                "geometry": tratta.get("geometry"),
+                            }
+                    except Exception:
+                        pass
+
+            if "percorsi" in includes:
+                response["percorsi"] = _load_percorsi_for_corsa(corsa_id)
+
+            return response
+        except OperativoDelegationError as exc:
+            _handle_operativo_fallback(exc)
 
     conn = get_connection()
     cur = conn.cursor()
@@ -351,41 +410,44 @@ def get_corsa(
         # INCLUDE: PERCORSI
         # ======================
         if "percorsi" in includes:
-            cur.execute("""
-                SELECT
-                    id,
-                    pref,
-                    vref,
-                    EXTRACT(EPOCH FROM tempo_percorrenza_min)/60.0,
-                    consumo,
-                    ST_AsGeoJSON(geom_rotta),
-                    comfort,
-                    distanza_nm
-                FROM percorso
-                WHERE id_corsa = %s
-                ORDER BY created_at ASC;
-            """, (cid,))
-            rows = cur.fetchall()
+            try:
+                response["percorsi"] = _load_percorsi_for_corsa(str(cid))
+            except HTTPException:
+                cur.execute("""
+                    SELECT
+                        id,
+                        pref,
+                        vref,
+                        EXTRACT(EPOCH FROM tempo_percorrenza_min)/60.0,
+                        consumo,
+                        ST_AsGeoJSON(geom_rotta),
+                        comfort,
+                        distanza_nm
+                    FROM percorso
+                    WHERE id_corsa = %s
+                    ORDER BY created_at ASC;
+                """, (cid,))
+                rows = cur.fetchall()
 
-            percorsi = []
-            for r in rows:
-                (
-                    pid, pref, vref, tempo_perc_min,
-                    consumo, geom_rotta, comfort, distanza_nm
-                ) = r
+                percorsi = []
+                for r in rows:
+                    (
+                        pid, pref, vref, tempo_perc_min,
+                        consumo, geom_rotta, comfort, distanza_nm
+                    ) = r
 
-                percorsi.append({
-                    "percorso_id": str(pid),
-                    "pref": pref,
-                    "vref": vref,
-                    "tempo_percorrenza": tempo_perc_min,
-                    "consumo": consumo,
-                    "geom_rotta": geom_rotta,
-                    "comfort": comfort,
-                    "distanza_nm": distanza_nm
-                })
+                    percorsi.append({
+                        "percorso_id": str(pid),
+                        "pref": pref,
+                        "vref": vref,
+                        "tempo_percorrenza": tempo_perc_min,
+                        "consumo": consumo,
+                        "geom_rotta": geom_rotta,
+                        "comfort": comfort,
+                        "distanza_nm": distanza_nm
+                    })
 
-            response["percorsi"] = percorsi
+                response["percorsi"] = percorsi
 
         return response
 
@@ -417,6 +479,12 @@ Per ogni corsa include:
     }
 )
 def dashboard_corse():
+    if operativo_delegation_enabled():
+        try:
+            return operativo_get_json("/internal/dashboard/corse", timeout=120.0)
+        except OperativoDelegationError as exc:
+            _handle_operativo_fallback(exc)
+
     return corsa_service.dashboard_corse()
 
 
