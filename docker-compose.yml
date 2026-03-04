@@ -1,0 +1,184 @@
+services:
+  service:
+    build:
+      context: .
+      dockerfile: Dockerfile.ml
+    ports:
+      - "18000:8000"
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - "25080:15080"
+    environment:
+      DB_CONN: "dbname=__forbidden_travelmar_test__ user=postgres password=admin host=host.docker.internal"
+      ML_URL: "http://service:8000/predict"
+      SIMULATION_URL: "http://simulator:5001/simulate"
+      OPT_URL: "http://ottimizzatore:8090/optimize/list"
+      SCHEDULER_URL: "http://scheduler:8091/schedule"
+      REPLANNING_SERVICE_URL: "http://replanning:8001"
+      ANAGRAFICA_SERVICE_URL: "http://anagrafica:8070"
+      ENABLE_ANAGRAFICA_DELEGATION: "true"
+      ENABLE_ANAGRAFICA_FALLBACK: "false"
+      OPERATIVO_SERVICE_URL: "http://operativo:8072"
+      ENABLE_OPERATIVO_DELEGATION: "true"
+      ENABLE_OPERATIVO_FALLBACK: "false"
+      PERCORSI_SERVICE_URL: "http://percorsi:8073"
+      ENABLE_PERCORSI_DELEGATION: "true"
+      ENABLE_PERCORSI_FALLBACK: "false"
+      FORECAST_SERVICE_URL: "http://forecast:8074"
+      ENABLE_FORECAST_DELEGATION: "true"
+      ENABLE_FORECAST_FALLBACK: "false"
+      ALERTING_SERVICE_URL: "http://alerting:8075"
+      ENABLE_ALERTING_DELEGATION: "true"
+      ENABLE_ALERTING_FALLBACK: "false"
+    depends_on:
+      - service
+      - anagrafica
+      - operativo
+      - percorsi
+      - forecast
+      - alerting
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  simulator:
+    build:
+      context: .
+      dockerfile: Dockerfile.simulator
+    ports:
+      - "15001:5001"
+      
+      
+  ottimizzatore:
+    build:
+      context: .
+      dockerfile: Dockerfile.ottimizzatore
+    ports:
+      - "18090:8090"
+    environment:
+      HDF5_USE_FILE_LOCKING: "FALSE"  
+      COPERNICUSMARINE_SERVICE_USERNAME: "sriccardi"
+      COPERNICUSMARINE_SERVICE_PASSWORD: "Napoli1926"
+    volumes:
+      - ./copernicus-data:/app/copernicus-data
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile.scheduler
+    ports:
+      - "18091:8091"
+
+  anagrafica:
+    build:
+      context: .
+      dockerfile: Dockerfile.anagrafica
+    ports:
+      - "18070:8070"
+    environment:
+      DB_CONN: "dbname=__forbidden_travelmar_test__ user=postgres password=admin host=host.docker.internal"
+      ANAGRAFICA_DB_CONN: "dbname=anagrafica_db user=postgres password=admin host=host.docker.internal"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  telemetry:
+    build:
+      context: .
+      dockerfile: Dockerfile.telemetry
+    ports:
+      - "18071:8071"
+    environment:
+      DB_CONN: "dbname=__forbidden_travelmar_test__ user=postgres password=admin host=host.docker.internal"
+      TELEMETRY_DB_CONN: "dbname=telemetry_db user=postgres password=admin host=host.docker.internal"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  operativo:
+    build:
+      context: .
+      dockerfile: Dockerfile.operativo
+    ports:
+      - "18072:8072"
+    environment:
+      DB_CONN: "dbname=__forbidden_travelmar_test__ user=postgres password=admin host=host.docker.internal"
+      OPERATIVO_DB_CONN: "dbname=operativo_db user=postgres password=admin host=host.docker.internal"
+      ANAGRAFICA_SERVICE_URL: "http://anagrafica:8070"
+      FORECAST_SERVICE_URL: "http://forecast:8074"
+      PERCORSI_SERVICE_URL: "http://percorsi:8073"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  percorsi:
+    build:
+      context: .
+      dockerfile: Dockerfile.percorsi
+    ports:
+      - "18073:8073"
+    environment:
+      DB_CONN: "dbname=__forbidden_travelmar_test__ user=postgres password=admin host=host.docker.internal"
+      PERCORSI_DB_CONN: "dbname=percorsi_db user=postgres password=admin host=host.docker.internal"
+      OPERATIVO_SERVICE_URL: "http://operativo:8072"
+      ANAGRAFICA_SERVICE_URL: "http://anagrafica:8070"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  forecast:
+    build:
+      context: .
+      dockerfile: Dockerfile.forecast
+    ports:
+      - "18074:8074"
+    environment:
+      DB_CONN: "dbname=__forbidden_travelmar_test__ user=postgres password=admin host=host.docker.internal"
+      FORECAST_DB_CONN: "dbname=forecast_db user=postgres password=admin host=host.docker.internal"
+      ML_URL: "http://service:8000/predict"
+      OPERATIVO_SERVICE_URL: "http://operativo:8072"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  alerting:
+    build:
+      context: .
+      dockerfile: Dockerfile.alerting
+    ports:
+      - "18075:8075"
+    environment:
+      DB_CONN: "dbname=__forbidden_travelmar_test__ user=postgres password=admin host=host.docker.internal"
+      ALERTING_DB_CONN: "dbname=alerting_db user=postgres password=admin host=host.docker.internal"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+      
+  replanning:
+    build:
+      context: .
+      dockerfile: Dockerfile.replanning
+    ports:
+      - "18001:8001"
+    environment:
+      REPLANNING_SERVICE_HOST: "0.0.0.0"
+      REPLANNING_SERVICE_PORT: "8001"
+      KAFKA_BOOTSTRAP_SERVERS: "host.docker.internal:9092"
+      KAFKA_ANALYTICS_TOPIC: "analytics_ais.raw"
+      KAFKA_GROUP_ID: "replanning-service-group"
+      REPLANNING_THETA_MIN: "10"
+      REPLANNING_THETA_CRITICAL_MIN: "30"
+      REPLANNING_MAX_LATE: "2"
+      REPLANNING_MAX_CRITICAL: "1"
+      REPLANNING_TOTAL_DELAY_MAX: "60"
+      REPLANNING_SINGLE_DELAY_MAX: "40"
+      REPLANNING_HORIZON_MINUTES: "120"
+      REPLANNING_COOLDOWN_MINUTES: "30"
+      REPLANNING_FREEZE_WINDOW_MINUTES: "15"
+    restart: unless-stopped
+    networks:
+      - default        # rete interna docker-compose
+      - kafka-net
+
+
+networks:
+  kafka-net:
+    external: true
+

@@ -1,0 +1,13 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY routing_service/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copia il codice del servizio
+COPY routing_service/ ./
+
+# Se il servizio ha un entrypoint preciso, adattalo qui
+CMD ["python", "app_server.py"]
+

@@ -1,0 +1,3270 @@
+﻿
+===== app/core/config.py =====
+
+diff --git a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/app/core/config.py b/SMART/SMART-DSS-MICROSERVICES/app/core/config.py
+index bbe91c3..dfe9053 100644
+--- a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/app/core/config.py
++++ b/SMART/SMART-DSS-MICROSERVICES/app/core/config.py
+@@ -56,18 +56,20 @@ Percorsi risultanti dall'ottimizzazione weather routing:
+ 
+ *Supporta espansione dinamica:* `?include=corsa,tratta,vascello`"""
+     },
+     {
+         "name": "Pianificazione",
+-        "description": """**Ottimizzazione e Weather Routing**
++        "description": """**Ottimizzazione, Weather Routing e Scheduling**
+         
+ Algoritmi avanzati per:
+-- **Weather routing con carico**: ottimizzazione multi-obiettivo (tempo/consumo/comfort) considerando meteo
+-- **Riposizionamento a vuoto**: stima tempi e consumi per trasferimenti
++- **Weather routing con carico**: ottimizzazione multi-obiettivo (tempo/consumo/comfort) via NAMOA\* con dati Copernicus
++- **Riposizionamento a vuoto**: stima tempi e consumi per trasferimenti non produttivi
+ - **Assegnazione ottimale**: matching vascelli-corse con ranking KPI
++- **Scheduling Pareto-ottimale**: assegnazione flotta per giornata con soluzioni multi-obiettivo
++- **Percorsi compatibili**: ricerca percorsi assegnabili per vincoli temporali
+ 
+-*Pipeline:* Forecast ÔåÆ Weather Routing ÔåÆ KPI Calculation ÔåÆ Ranking"""
++*Pipeline completa:* Forecast ML ÔåÆ Weather Routing ÔåÆ KPI Calculation ÔåÆ Scheduling ÔåÆ Ranking"""
+     },
+     {
+         "name": "Assegnazione",
+         "description": """**Gestione operativa assegnazioni**
+         
+@@ -87,15 +89,17 @@ Gestione dei piani operativi con ciclo di vita:
+     },
+     {
+         "name": "Simulazione",
+         "description": """**Simulatore fisico di navigazione**
+         
+-Simulazione realistica della navigazione:
++Simulazione realistica della navigazione con motore fisico RAFLAC:
+ - Modello fisico con timestep configurabile
+ - Coordinate di partenza automatiche o personalizzate
+-- Integrazione con servizio simulatore esterno
++- Integrazione con servizio simulatore esterno (Flask :5001)
+ - Accelerazione simulazione tramite `sim_speed_factor`
++- Simulazione anticipata di piani operativi completi (`simula_piano`)
++- Supporto disturbi runtime (speed decay, correnti esterne)
+ 
+ *Utilizzo:* validazione scenari, training operatori, analisi what-if."""
+     },
+     {
+         "name": "Deadhead Trips",
+@@ -123,25 +127,40 @@ Endpoint dedicati alla verifica della necessit├á di replanning in tempo quasi re
+     },
+     {
+         "name": "Configurazione",
+         "description": """**Parametri runtime e integrazione**
+         
+-Configurazione dinamica senza riavvio:
+-- **Kafka**: finestra temporale, intervalli di pubblicazione, `sim_speed_factor`
+-- **Cache**: durata validit├á dati ottimizzazione
++Configurazione dinamica senza riavvio (hot-reload):
++- **Kafka**: finestra temporale (`window_future`), intervalli di pubblicazione, `sim_speed_factor`
++- **Cache**: durata validit├á dati ottimizzazione (`cache_delta_minutes`, default 120 min)
+ 
+-*Hot-reload:* modifiche applicate immediatamente."""
++*Endpoint:* `GET/POST /api/config/kafka-settings` e `GET/POST /config`"""
+     },
+ ]
+ 
+ # Environment-backed configuration
+ DB_CONN = os.getenv("DB_CONN", "dbname=travelmar_db user=postgres password=admin host=localhost")
+ ML_URL = os.getenv("ML_URL", "http://localhost:8000/predict")
+ OPT_URL = os.getenv("OPT_URL", "http://192.168.1.250:8090/optimize")
+ SIMULATION_URL = os.getenv("SIMULATION_URL", "http://192.168.1.224:5001/simulate")
+ SCHEDULER_URL = os.getenv("SCHEDULER_URL", "http://localhost:8091/schedule")
+ REPLANNING_SERVICE_URL = os.getenv("REPLANNING_SERVICE_URL", "http://localhost:8001")
++ANAGRAFICA_SERVICE_URL = os.getenv("ANAGRAFICA_SERVICE_URL", "http://localhost:8070")
++ENABLE_ANAGRAFICA_DELEGATION = os.getenv("ENABLE_ANAGRAFICA_DELEGATION", "false").lower() in {"1", "true", "yes", "on"}
++ENABLE_ANAGRAFICA_FALLBACK = os.getenv("ENABLE_ANAGRAFICA_FALLBACK", "true").lower() in {"1", "true", "yes", "on"}
++OPERATIVO_SERVICE_URL = os.getenv("OPERATIVO_SERVICE_URL", "http://operativo:8072")
++ENABLE_OPERATIVO_DELEGATION = os.getenv("ENABLE_OPERATIVO_DELEGATION", "false").lower() in {"1", "true", "yes", "on"}
++ENABLE_OPERATIVO_FALLBACK = os.getenv("ENABLE_OPERATIVO_FALLBACK", "true").lower() in {"1", "true", "yes", "on"}
++PERCORSI_SERVICE_URL = os.getenv("PERCORSI_SERVICE_URL", "http://percorsi:8073")
++ENABLE_PERCORSI_DELEGATION = os.getenv("ENABLE_PERCORSI_DELEGATION", "false").lower() in {"1", "true", "yes", "on"}
++ENABLE_PERCORSI_FALLBACK = os.getenv("ENABLE_PERCORSI_FALLBACK", "true").lower() in {"1", "true", "yes", "on"}
++FORECAST_SERVICE_URL = os.getenv("FORECAST_SERVICE_URL", "http://forecast:8074")
++ENABLE_FORECAST_DELEGATION = os.getenv("ENABLE_FORECAST_DELEGATION", "false").lower() in {"1", "true", "yes", "on"}
++ENABLE_FORECAST_FALLBACK = os.getenv("ENABLE_FORECAST_FALLBACK", "true").lower() in {"1", "true", "yes", "on"}
++ALERTING_SERVICE_URL = os.getenv("ALERTING_SERVICE_URL", "http://alerting:8075")
++ENABLE_ALERTING_DELEGATION = os.getenv("ENABLE_ALERTING_DELEGATION", "false").lower() in {"1", "true", "yes", "on"}
++ENABLE_ALERTING_FALLBACK = os.getenv("ENABLE_ALERTING_FALLBACK", "true").lower() in {"1", "true", "yes", "on"}
+ 
+ import time
+ KAFKA_CONFIG_TIMESTAMP = time.time()
+ KAFKA_CONFIG = {
+     "window_future": int(os.getenv("WINDOW_FUTURE_MIN", "30")),
+
+===== app/core/scheduler.py =====
+
+diff --git a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/app/core/scheduler.py b/SMART/SMART-DSS-MICROSERVICES/app/core/scheduler.py
+index cdd5704..51a255a 100644
+--- a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/app/core/scheduler.py
++++ b/SMART/SMART-DSS-MICROSERVICES/app/core/scheduler.py
+@@ -5,11 +5,12 @@ Utilizza APScheduler per schedulare simulazioni automatiche.
+ from apscheduler.schedulers.background import BackgroundScheduler
+ from apscheduler.jobstores.memory import MemoryJobStore
+ from apscheduler.executors.pool import ThreadPoolExecutor
+ from datetime import datetime
+ from zoneinfo import ZoneInfo
+-from app.core.config import SERVICE_CONFIG
++import requests
++from app.core.config import OPERATIVO_SERVICE_URL, SERVICE_CONFIG
+ 
+ # Configurazione scheduler
+ jobstores = {
+     'default': MemoryJobStore()
+ }
+@@ -42,10 +43,11 @@ LAST_REPLANNING_STATUS = {
+ 
+ 
+ def _run_periodic_replanning_job():
+     """Job periodico che avvia i check di replanning."""
+     from app.services.replanning_service import run_periodic_replanning_cycle
++
+     now = datetime.now(ZoneInfo("Europe/Rome")).isoformat()
+     LAST_REPLANNING_STATUS["last_started_at"] = now
+ 
+     try:
+         result = run_periodic_replanning_cycle()
+@@ -116,22 +118,24 @@ def schedule_simulation_job(
+         run_date: Data/ora di esecuzione
+         assegnazione_id: ID dell'assegnazione da simulare
+         sim_speed_factor: Fattore di accelerazione simulazione
+     """
+     from app.services.simulatore_service import build_and_run_simulation
+-    from app.services.assegnazione_service import aggiorna_stato_assegnazione
+     from app.models.common import SimulationBuildInput, SimVesselInput
+-    from app.models.assegnazione import AssegnazioneUpdateStatoInput, StatoEsecuzioneEnum
+     
+     def run_simulation():
+         """Funzione wrapper per aggiornare stato e eseguire la simulazione."""
+         try:
+             # 1. Aggiorna lo stato dell'assegnazione a IN_CORSO
+-            stato_input = AssegnazioneUpdateStatoInput(
+-                stato_esecuzione=StatoEsecuzioneEnum.IN_CORSO
++            patch_url = f"{OPERATIVO_SERVICE_URL.rstrip('/')}/internal/assegnazione/{assegnazione_id}/stato"
++            patch_resp = requests.patch(
++                patch_url,
++                json={"stato_esecuzione": "IN_CORSO"},
++                timeout=8,
+             )
+-            aggiorna_stato_assegnazione(assegnazione_id, stato_input)
++            if patch_resp.status_code >= 400:
++                raise RuntimeError(f"update stato failed: HTTP {patch_resp.status_code}")
+             print(f"[Scheduler] Stato assegnazione {assegnazione_id} aggiornato a IN_CORSO")
+             
+             # 2. Avvia la simulazione
+             input_data = SimulationBuildInput(
+                 elementi=[
+
+===== app/main.py =====
+
+diff --git a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/app/main.py b/SMART/SMART-DSS-MICROSERVICES/app/main.py
+index 1fadd70..1965fa4 100644
+--- a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/app/main.py
++++ b/SMART/SMART-DSS-MICROSERVICES/app/main.py
+@@ -7,11 +7,11 @@ from fastapi.responses import HTMLResponse, JSONResponse
+ from fastapi.openapi.docs import get_swagger_ui_html
+ from fastapi.middleware.cors import CORSMiddleware
+ from app.routers import (
+     porto, tratta, corsa, vascello, percorso,
+     pianificazione, piano_operativo, simulazione, config as config_router,
+-    assegnazione, deadhead, replanning
++    assegnazione, deadhead, replanning, allarme
+ )
+ from app.core.config import TAGS_METADATA
+ from app.core.scheduler import start_scheduler, shutdown_scheduler
+ 
+ # Timestamp di avvio dell'applicazione (fuso orario italiano)
+@@ -122,11 +122,11 @@ Il sistema ├¿ basato su architettura a **microservizi** con:
+ 
+ ---
+ 
+    *Ultimo aggiornamento documentazione: {STARTUP_TIME}*
+     """,
+-    version="2.0.0",
++    version="2.1.0",
+     swagger_ui_parameters={
+         "defaultModelsExpandDepth": -1,
+         "docExpansion": "none",
+         "filter": True,
+         "showExtensions": True,
+@@ -226,7 +226,8 @@ app.include_router(assegnazione.router)
+ app.include_router(piano_operativo.router)
+ app.include_router(simulazione.router)
+ app.include_router(config_router.router)
+ app.include_router(deadhead.router)
+ app.include_router(replanning.router)
++app.include_router(allarme.router)
+ 
+ 
+
+===== docker-compose.yml =====
+
+diff --git a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/docker-compose.yml b/SMART/SMART-DSS-MICROSERVICES/docker-compose.yml
+index 33a27be..96d0557 100644
+--- a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/docker-compose.yml
++++ b/SMART/SMART-DSS-MICROSERVICES/docker-compose.yml
+@@ -1,51 +1,65 @@
+-version: "3.9"
+-
+ services:
+   service:
+     build:
+       context: .
+       dockerfile: Dockerfile.ml
+-    container_name: service
+     ports:
+-      - "8000:8000"
++      - "18000:8000"
+ 
+   backend:
+     build:
+       context: .
+       dockerfile: Dockerfile.backend
+-    container_name: backend_service
+     ports:
+-      - "15080:15080"
++      - "25080:15080"
+     environment:
+       DB_CONN: "dbname=travelmar_db user=postgres password=admin host=host.docker.internal"
+       ML_URL: "http://service:8000/predict"
+       SIMULATION_URL: "http://simulator:5001/simulate"
+       OPT_URL: "http://ottimizzatore:8090/optimize/list"
+       SCHEDULER_URL: "http://scheduler:8091/schedule"
+       REPLANNING_SERVICE_URL: "http://replanning:8001"
++      ANAGRAFICA_SERVICE_URL: "http://anagrafica:8070"
++      ENABLE_ANAGRAFICA_DELEGATION: "true"
++      ENABLE_ANAGRAFICA_FALLBACK: "false"
++      OPERATIVO_SERVICE_URL: "http://operativo:8072"
++      ENABLE_OPERATIVO_DELEGATION: "true"
++      ENABLE_OPERATIVO_FALLBACK: "false"
++      PERCORSI_SERVICE_URL: "http://percorsi:8073"
++      ENABLE_PERCORSI_DELEGATION: "true"
++      ENABLE_PERCORSI_FALLBACK: "false"
++      FORECAST_SERVICE_URL: "http://forecast:8074"
++      ENABLE_FORECAST_DELEGATION: "true"
++      ENABLE_FORECAST_FALLBACK: "false"
++      ALERTING_SERVICE_URL: "http://alerting:8075"
++      ENABLE_ALERTING_DELEGATION: "true"
++      ENABLE_ALERTING_FALLBACK: "false"
+     depends_on:
+       - service
++      - anagrafica
++      - operativo
++      - percorsi
++      - forecast
++      - alerting
+     extra_hosts:
+       - "host.docker.internal:host-gateway"
+ 
+   simulator:
+     build:
+       context: .
+       dockerfile: Dockerfile.simulator
+-    container_name: simulator
+     ports:
+-      - "5001:5001"
++      - "15001:5001"
+       
+       
+   ottimizzatore:
+     build:
+       context: .
+       dockerfile: Dockerfile.ottimizzatore
+-    container_name: ottimizzatore
+     ports:
+-      - "8090:8090"
++      - "18090:8090"
+     environment:
+       HDF5_USE_FILE_LOCKING: "FALSE"  
+       COPERNICUSMARINE_SERVICE_USERNAME: "sriccardi"
+       COPERNICUSMARINE_SERVICE_PASSWORD: "Napoli1926"
+     volumes:
+@@ -53,21 +67,97 @@ services:
+ 
+   scheduler:
+     build:
+       context: .
+       dockerfile: Dockerfile.scheduler
+-    container_name: scheduler
+     ports:
+-      - "8091:8091"
++      - "18091:8091"
++
++  anagrafica:
++    build:
++      context: .
++      dockerfile: Dockerfile.anagrafica
++    ports:
++      - "18070:8070"
++    environment:
++      DB_CONN: "dbname=__forbidden_travelmar_test__ user=postgres password=admin host=host.docker.internal"
++      ANAGRAFICA_DB_CONN: "dbname=anagrafica_db user=postgres password=admin host=host.docker.internal"
++    extra_hosts:
++      - "host.docker.internal:host-gateway"
++
++  telemetry:
++    build:
++      context: .
++      dockerfile: Dockerfile.telemetry
++    ports:
++      - "18071:8071"
++    environment:
++      DB_CONN: "dbname=travelmar_db user=postgres password=admin host=host.docker.internal"
++    extra_hosts:
++      - "host.docker.internal:host-gateway"
++
++  operativo:
++    build:
++      context: .
++      dockerfile: Dockerfile.operativo
++    ports:
++      - "18072:8072"
++    environment:
++      DB_CONN: "dbname=__forbidden_travelmar_test__ user=postgres password=admin host=host.docker.internal"
++      OPERATIVO_DB_CONN: "dbname=operativo_db user=postgres password=admin host=host.docker.internal"
++      ANAGRAFICA_SERVICE_URL: "http://anagrafica:8070"
++      FORECAST_SERVICE_URL: "http://forecast:8074"
++      PERCORSI_SERVICE_URL: "http://percorsi:8073"
++    extra_hosts:
++      - "host.docker.internal:host-gateway"
++
++  percorsi:
++    build:
++      context: .
++      dockerfile: Dockerfile.percorsi
++    ports:
++      - "18073:8073"
++    environment:
++      DB_CONN: "dbname=__forbidden_travelmar_test__ user=postgres password=admin host=host.docker.internal"
++      PERCORSI_DB_CONN: "dbname=percorsi_db user=postgres password=admin host=host.docker.internal"
++      OPERATIVO_SERVICE_URL: "http://operativo:8072"
++      ANAGRAFICA_SERVICE_URL: "http://anagrafica:8070"
++    extra_hosts:
++      - "host.docker.internal:host-gateway"
++
++  forecast:
++    build:
++      context: .
++      dockerfile: Dockerfile.forecast
++    ports:
++      - "18074:8074"
++    environment:
++      DB_CONN: "dbname=__forbidden_travelmar_test__ user=postgres password=admin host=host.docker.internal"
++      FORECAST_DB_CONN: "dbname=forecast_db user=postgres password=admin host=host.docker.internal"
++      ML_URL: "http://service:8000/predict"
++      OPERATIVO_SERVICE_URL: "http://operativo:8072"
++    extra_hosts:
++      - "host.docker.internal:host-gateway"
++
++  alerting:
++    build:
++      context: .
++      dockerfile: Dockerfile.alerting
++    ports:
++      - "18075:8075"
++    environment:
++      DB_CONN: "dbname=__forbidden_travelmar_test__ user=postgres password=admin host=host.docker.internal"
++      ALERTING_DB_CONN: "dbname=alerting_db user=postgres password=admin host=host.docker.internal"
++    extra_hosts:
++      - "host.docker.internal:host-gateway"
+       
+   replanning:
+     build:
+       context: .
+       dockerfile: Dockerfile.replanning
+-    container_name: replanning
+     ports:
+-      - "8001:8001"
++      - "18001:8001"
+     environment:
+       REPLANNING_SERVICE_HOST: "0.0.0.0"
+       REPLANNING_SERVICE_PORT: "8001"
+       KAFKA_BOOTSTRAP_SERVERS: "host.docker.internal:9092"
+       KAFKA_ANALYTICS_TOPIC: "analytics_ais.raw"
+
+===== Dockerfile.backend =====
+
+diff --git a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/Dockerfile.backend b/SMART/SMART-DSS-MICROSERVICES/Dockerfile.backend
+index ba47cb0..a4e792b 100644
+--- a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/Dockerfile.backend
++++ b/SMART/SMART-DSS-MICROSERVICES/Dockerfile.backend
+@@ -8,7 +8,6 @@ RUN apt-get update && apt-get install -y gcc libpq-dev && rm -rf /var/lib/apt/li
+ COPY requirements.txt .
+ RUN pip install --no-cache-dir -r requirements.txt
+ 
+ COPY . .
+ 
+-#CMD ["uvicorn", "backend_service_new:app", "--host", "0.0.0.0", "--port", "15080"]
+ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "15080"]
+
+===== Dockerfile.ottimizzatore =====
+
+diff --git a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/Dockerfile.ottimizzatore b/SMART/SMART-DSS-MICROSERVICES/Dockerfile.ottimizzatore
+index 4313498..04e62b6 100644
+--- a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/Dockerfile.ottimizzatore
++++ b/SMART/SMART-DSS-MICROSERVICES/Dockerfile.ottimizzatore
+@@ -1,13 +1,13 @@
+ FROM python:3.11-slim
+ 
+ WORKDIR /app
+ 
+-COPY new_ottimizzatore/requirements.txt .
++COPY routing_service/requirements.txt .
+ RUN pip install --no-cache-dir -r requirements.txt
+ 
+ # Copia il codice del servizio
+-COPY new_ottimizzatore/ ./
++COPY routing_service/ ./
+ 
+ # Se il servizio ha un entrypoint preciso, adattalo qui
+ CMD ["python", "app_server.py"]
+ 
+
+===== Dockerfile.scheduler =====
+
+diff --git a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/Dockerfile.scheduler b/SMART/SMART-DSS-MICROSERVICES/Dockerfile.scheduler
+index 1fa6ed6..160ea4e 100644
+--- a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/Dockerfile.scheduler
++++ b/SMART/SMART-DSS-MICROSERVICES/Dockerfile.scheduler
+@@ -1,11 +1,11 @@
+ FROM python:3.11-slim
+ 
+ WORKDIR /app
+ 
+-COPY scheduler_service/requirements.txt .
++COPY scheduling_service/requirements.txt .
+ RUN pip install --no-cache-dir -r requirements.txt
+ 
+ # Copy service code
+-COPY scheduler_service/ ./
++COPY scheduling_service/ ./
+ 
+ CMD ["python", "app_server.py"]
+
+===== Dockerfile.simulator =====
+
+diff --git a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/Dockerfile.simulator b/SMART/SMART-DSS-MICROSERVICES/Dockerfile.simulator
+index 4faa8f4..48e6cf2 100644
+--- a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/Dockerfile.simulator
++++ b/SMART/SMART-DSS-MICROSERVICES/Dockerfile.simulator
+@@ -1,13 +1,13 @@
+ FROM python:3.11-slim
+ 
+ WORKDIR /app
+ 
+-COPY real_vessel_service/requirements.txt .
++COPY simulator_service/requirements.txt .
+ RUN pip install --no-cache-dir -r requirements.txt
+ 
+ # Copia il codice del servizio
+-COPY real_vessel_service/ ./real_vessel_service/
++COPY simulator_service/ ./simulator_service/
+ 
+ # Se il servizio ha un entrypoint preciso, adattalo qui
+-CMD ["python", "real_vessel_service/sim_server.py"]
++CMD ["python", "simulator_service/sim_server.py"]
+ 
+
+===== app/routers/assegnazione.py =====
+
+diff --git a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/app/routers/assegnazione.py b/SMART/SMART-DSS-MICROSERVICES/app/routers/assegnazione.py
+index 7223572..199e3e6 100644
+--- a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/app/routers/assegnazione.py
++++ b/SMART/SMART-DSS-MICROSERVICES/app/routers/assegnazione.py
+@@ -1,20 +1,27 @@
+ from fastapi import APIRouter, HTTPException, Query
+ from typing import Dict, List, Optional
+-from datetime import timedelta
+-from app.core.database import get_connection
+ from app.services import assegnazione_service, pianificazione_service
++from app.core.operativo_client import delegation_enabled as operativo_delegation_enabled, get_json as operativo_get_json, post_json as operativo_post_json, patch_json as operativo_patch_json, OperativoDelegationError
++from app.core.percorsi_client import get_json as percorsi_get_json, PercorsiDelegationError
++from app.core.anagrafica_client import get_json as anagrafica_get_json, AnagraficaDelegationError
++from app.core.config import ENABLE_OPERATIVO_FALLBACK
+ from app.models.common import (
+     CheckValiditaInput, CheckValiditaResponse,
+     CreaAssegnazioniBulkInput, CreaAssegnazioniBulkResponse
+ )
+ from app.models.assegnazione import *
+ 
+ router = APIRouter(prefix="", tags=["Assegnazione"])
+ ALLOWED_INCLUDES_ASSEGNAZIONE = {"piano", "percorso", "corsa", "vascello"}
+ 
+ 
++def _handle_operativo_fallback(exc: Exception) -> None:
++    if not ENABLE_OPERATIVO_FALLBACK:
++        raise HTTPException(status_code=503, detail="Operativo service unavailable") from exc
++
++
+ @router.get(
+     "/assegnazione/{assegnazione_id}",
+     response_model=AssegnazioneAPI,
+     response_model_exclude_none=True,
+     summary="Dettaglio assegnazione",
+@@ -28,188 +35,66 @@ Per impostazione predefinita l'endpoint restituisce solo i dati dell'assegnazion
+ Entit├á espandibili:
+ - `piano`: dettagli del piano operativo associato
+ - `percorso`: dettagli del percorso associato
+ - `corsa`: dettagli della corsa associata al percorso
+ - `vascello`: dettagli del vascello associato al percorso
+-
+-Esempi:
+-- `/assegnazione/{id}`
+-- `/assegnazione/{id}?include=percorso`
+-- `/assegnazione/{id}?include=piano,percorso,corsa,vascello`
+     """,
+     responses={
+         200: {"description": "Dettaglio assegnazione restituito"},
+         404: {"description": "Assegnazione non trovata"},
+-        400: {"description": "Parametro include non valido"}
++        400: {"description": "Parametro include non valido"},
+     }
+ )
+ def get_assegnazione(
+     assegnazione_id: str,
+-    include: Optional[str] = Query(None)
++    include: Optional[str] = Query(None),
+ ):
+     includes = set(s.strip() for s in include.split(",") if s.strip()) if include else set()
+     invalid = includes - ALLOWED_INCLUDES_ASSEGNAZIONE
+     if invalid:
+         raise HTTPException(
+             400,
+             f"include non valido: {sorted(invalid)}. Ammessi: {sorted(ALLOWED_INCLUDES_ASSEGNAZIONE)}"
+         )
+ 
+-    conn = get_connection()
+-    cur = conn.cursor()
++    if operativo_delegation_enabled():
++        try:
++            base = operativo_get_json(f"/internal/assegnazione/{assegnazione_id}")
++            response = dict(base)
+ 
+-    try:
+-        cur.execute("""
+-            SELECT
+-                a.id,
+-                a.piano_id,
+-                a.percorso_id,
+-                p.vascello_id,
+-                p.id_corsa,
+-                a.stato_esecuzione,
+-                a.virtuale,
+-                a.orario_completamento
+-            FROM assegnazione a
+-            LEFT JOIN percorso p ON p.id = a.percorso_id
+-            WHERE a.id = %s
+-            LIMIT 1;
+-        """, (assegnazione_id,))
+-        row = cur.fetchone()
+-
+-        if row is None:
+-            raise HTTPException(404, f"Assegnazione non trovata: {assegnazione_id}")
+-
+-        (
+-            aid, piano_id, percorso_id,
+-            vascello_id, id_corsa,
+-            stato_esecuzione, virtuale, orario_completamento
+-        ) = row
+-
+-        response = {
+-            "id": str(aid),
+-            "piano_id": str(piano_id) if piano_id else None,
+-            "vascello_id": str(vascello_id) if vascello_id else None,
+-            "percorso_id": str(percorso_id),
+-            "id_corsa": str(id_corsa) if id_corsa else None,
+-            "stato_esecuzione": stato_esecuzione,
+-            "virtuale": virtuale,
+-            "orario_completamento": orario_completamento.isoformat() if orario_completamento else None
+-        }
+-
+-        if "piano" in includes and piano_id:
+-            cur.execute("""
+-                SELECT id, data_riferimento, stato, kpi_profitto_stimato, kpi_robustezza, versione
+-                FROM piano_operativo
+-                WHERE id = %s
+-                LIMIT 1;
+-            """, (piano_id,))
+-            rp = cur.fetchone()
+-            if rp:
+-                response["piano"] = {
+-                    "id": str(rp[0]),
+-                    "data_riferimento": rp[1].isoformat() if rp[1] else None,
+-                    "stato": rp[2],
+-                    "kpi_profitto_stimato": rp[3],
+-                    "kpi_robustezza": rp[4],
+-                    "versione": rp[5]
+-                }
+-
+-        percorso_obj = None
+-        if includes & {"percorso", "corsa", "vascello"}:
+-            cur.execute("""
+-                SELECT
+-                    id,
+-                    id_corsa,
+-                    pref,
+-                    vref,
+-                    tempo_percorrenza_min,
+-                    consumo,
+-                    ST_AsGeoJSON(geom_rotta),
+-                    vascello_id,
+-                    comfort,
+-                    distanza_nm
+-                FROM percorso
+-                WHERE id = %s
+-                LIMIT 1;
+-            """, (percorso_id,))
+-            rper = cur.fetchone()
+-            if rper:
+-                tempo_percorrenza = rper[4]
+-                if isinstance(tempo_percorrenza, timedelta):
+-                    tempo_percorrenza = tempo_percorrenza.total_seconds() / 60.0
+-
+-                percorso_obj = {
+-                    "percorso_id": str(rper[0]),
+-                    "pref": rper[2],
+-                    "vref": rper[3],
+-                    "tempo_percorrenza": tempo_percorrenza,
+-                    "consumo": rper[5],
+-                    "geom_rotta": rper[6],
+-                    "comfort": rper[8],
+-                    "distanza_nm": rper[9]
+-                }
++            piano_id = response.get("piano_id")
++            percorso_id = response.get("percorso_id")
++            id_corsa = response.get("id_corsa")
++            vascello_id = response.get("vascello_id")
+ 
++            if "piano" in includes and piano_id:
++                response["piano"] = operativo_get_json(f"/internal/piano/{piano_id}")
++
++            percorso_obj = None
++            if includes & {"percorso", "corsa", "vascello"} and percorso_id:
++                percorso_obj = percorsi_get_json(f"/internal/percorso/{percorso_id}")
+                 if "percorso" in includes:
+                     response["percorso"] = percorso_obj
++                if not id_corsa and isinstance(percorso_obj, dict):
++                    id_corsa = percorso_obj.get("corsa_id")
++                if not vascello_id and isinstance(percorso_obj, dict):
++                    vascello_id = percorso_obj.get("vascello_id")
++
++            if "corsa" in includes and id_corsa:
++                response["corsa"] = operativo_get_json(f"/internal/corsa/id/{id_corsa}")
++
++            if "vascello" in includes and vascello_id:
++                response["vascello"] = anagrafica_get_json(f"/internal/vascello/{vascello_id}")
+ 
+-        if "corsa" in includes and id_corsa:
+-            cur.execute("""
+-                SELECT
+-                    id,
+-                    nome,
+-                    tratta_id,
+-                    orario_partenza_schedulato,
+-                    orario_arrivo_max,
+-                    previsione_domanda_id
+-                FROM corsa
+-                WHERE id = %s
+-                LIMIT 1;
+-            """, (id_corsa,))
+-            rc = cur.fetchone()
+-            if rc:
+-                response["corsa"] = {
+-                    "id": str(rc[0]),
+-                    "nome": rc[1],
+-                    "tratta_id": str(rc[2]) if rc[2] else None,
+-                    "orario_partenza_schedulato": rc[3].isoformat() if rc[3] else None,
+-                    "orario_arrivo_max": rc[4].isoformat() if rc[4] else None,
+-                    "previsione_domanda_id": str(rc[5]) if rc[5] else None
+-                }
+-
+-        if "vascello" in includes and vascello_id:
+-            cur.execute("""
+-                SELECT
+-                    id,
+-                    mmsi,
+-                    nome,
+-                    capacita_passeggeri,
+-                    costo_orario_esercizio,
+-                    velocita_max_nodi,
+-                    stato_salute_aggregato,
+-                    profilo_consumo_json,
+-                    data_creazione
+-                FROM vascello
+-                WHERE id = %s
+-                LIMIT 1;
+-            """, (vascello_id,))
+-            rv = cur.fetchone()
+-            if rv:
+-                response["vascello"] = {
+-                    "id": str(rv[0]),
+-                    "mmsi": rv[1],
+-                    "nome": rv[2],
+-                    "capacita_passeggeri": rv[3],
+-                    "costo_orario_esercizio": rv[4],
+-                    "velocita_max_nodi": rv[5],
+-                    "stato_salute_aggregato": rv[6],
+-                    "profilo_consumo_json": rv[7],
+-                    "data_creazione": rv[8].isoformat() if rv[8] else None
+-                }
+-
+-        return response
+-    finally:
+-        conn.close()
++            return response
++        except (OperativoDelegationError, PercorsiDelegationError, AnagraficaDelegationError) as exc:
++            _handle_operativo_fallback(exc)
++
++    try:
++        return operativo_get_json(f"/internal/assegnazione/{assegnazione_id}")
++    except Exception as exc:
++        raise HTTPException(status_code=503, detail="Operativo service unavailable") from exc
+ 
+ 
+ @router.post(
+     "/assegnazione/crea",
+     response_model=AssegnazioneResponse,
+@@ -252,10 +137,21 @@ Collega un **percorso** (rotta ottimizzata) a un **piano operativo**, permettend
+         404: {"description": "Percorso o piano non trovato"},
+         409: {"description": "Assegnazione gi├á esistente per questo percorso"}
+     }
+ )
+ def crea_assegnazione_endpoint(data: AssegnazioneCreateInput):
++    if operativo_delegation_enabled():
++        try:
++            return operativo_post_json("/internal/assegnazione/crea", {
++                "piano_id": data.piano_id,
++                "percorso_id": data.percorso_id,
++                "stato_esecuzione": data.stato_esecuzione.value,
++                "virtuale": data.virtuale,
++            })
++        except OperativoDelegationError as exc:
++            _handle_operativo_fallback(exc)
++
+     return assegnazione_service.crea_assegnazione(data)
+ 
+ 
+ @router.patch(
+     "/assegnazione/{assegnazione_id}/stato",
+@@ -302,10 +198,18 @@ PIANIFICATA ÔåÆ IN_CORSO ÔåÆ COMPLETATA
+         200: {"description": "Stato aggiornato con successo"},
+         404: {"description": "Assegnazione non trovata"}
+     }
+ )
+ def aggiorna_stato_assegnazione(assegnazione_id: str, data: AssegnazioneUpdateStatoInput):
++    if operativo_delegation_enabled():
++        try:
++            return operativo_patch_json(f"/internal/assegnazione/{assegnazione_id}/stato", {
++                "stato_esecuzione": data.stato_esecuzione.value,
++            })
++        except OperativoDelegationError as exc:
++            _handle_operativo_fallback(exc)
++
+     return assegnazione_service.aggiorna_stato_assegnazione(assegnazione_id, data)
+ 
+ 
+ @router.get(
+     "/assegnazione/by_piano/{piano_id}",
+@@ -335,10 +239,16 @@ Lista di `AssegnazioneResponse` con:
+     responses={
+         200: {"description": "Lista assegnazioni recuperata (vuota se nessuna assegnazione)"}
+     }
+ )
+ def lista_assegnazioni_by_piano_endpoint(piano_id: str):
++    if operativo_delegation_enabled():
++        try:
++            return operativo_get_json(f"/internal/assegnazione/by_piano/{piano_id}")
++        except OperativoDelegationError as exc:
++            _handle_operativo_fallback(exc)
++
+     return assegnazione_service.lista_assegnazioni_by_piano(piano_id)
+ 
+ 
+ @router.post(
+     "/assegnazione/check_validita",
+@@ -451,10 +361,22 @@ Permette di creare pi├╣ assegnazioni contemporaneamente, associando percorsi a u
+         404: {"description": "Piano o percorso non trovato"},
+         409: {"description": "Una o pi├╣ assegnazioni gi├á esistenti"}
+     }
+ )
+ def crea_assegnazioni_bulk_endpoint(data: CreaAssegnazioniBulkInput):
++    if operativo_delegation_enabled():
++        try:
++            return operativo_post_json("/internal/assegnazione/bulk", {
++                "piano_id": data.piano_id,
++                "percorsi": [
++                    {"percorso_id": item.percorso_id, "virtuale": item.virtuale}
++                    for item in data.percorsi
++                ],
++            })
++        except OperativoDelegationError as exc:
++            _handle_operativo_fallback(exc)
++
+     return assegnazione_service.crea_assegnazioni_bulk(data)
+ 
+ 
+ @router.post(
+     "/assegnazione/in_corso2cancellata",
+@@ -467,6 +389,12 @@ impostando il loro stato a `CANCELLATA`.
+ 
+ Utile per resettare scenari di simulazione o test rimasti appesi.
+     """
+ )
+ def cancella_assegnazioni_virtuali_in_corso():
++    if operativo_delegation_enabled():
++        try:
++            return operativo_post_json("/internal/assegnazione/in_corso2cancellata", {})
++        except OperativoDelegationError as exc:
++            _handle_operativo_fallback(exc)
++
+     return assegnazione_service.cancella_assegnazioni_virtuali_in_corso()
+
+===== app/routers/corsa.py =====
+
+diff --git a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/app/routers/corsa.py b/SMART/SMART-DSS-MICROSERVICES/app/routers/corsa.py
+index e0cbaea..dbf5eab 100644
+--- a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/app/routers/corsa.py
++++ b/SMART/SMART-DSS-MICROSERVICES/app/routers/corsa.py
+@@ -1,18 +1,26 @@
+ from fastapi import APIRouter, HTTPException, Query, Path
+ from typing import List, Optional
+ from app.core.database import get_connection
++from app.core.operativo_client import delegation_enabled as operativo_delegation_enabled, get_json as operativo_get_json, post_json as operativo_post_json, OperativoDelegationError
++from app.core.forecast_client import delegation_enabled as forecast_delegation_enabled, post_json as forecast_post_json, ForecastDelegationError
++from app.core.config import ENABLE_FORECAST_FALLBACK, ENABLE_OPERATIVO_FALLBACK
+ from app.models.corsa import (
+     PrevisioneRequest, PrevisioneResponse, CorsaInput, CorsaCreated,
+     OrariResponse, CorsaWithPrevisione, CorsaGiornoItem, DashboardCorsaItem, CorsaAPI
+ )
+ from app.services import previsione_service, corsa_service
+ 
+ router = APIRouter(prefix="", tags=["Corse"])
+ ALLOWED_INCLUDES_CORSA = {"tratta", "percorsi"}
+ 
+ 
++def _handle_operativo_fallback(exc: Exception) -> None:
++    if not ENABLE_OPERATIVO_FALLBACK:
++        raise HTTPException(status_code=503, detail="Operativo service unavailable") from exc
++
++
+ @router.post(
+     "/corsa/{corsa_id}/prevedi",
+     response_model=PrevisioneResponse,
+     summary="Calcola previsione domanda passeggeri",
+     description="""
+@@ -46,10 +54,25 @@ ALLOWED_INCLUDES_CORSA = {"tratta", "percorsi"}
+ def previsione_endpoint(
+     corsa_id: str,
+     req: PrevisioneRequest,
+     disable_cache: bool = Query(False, description="Se true forza il ricalcolo senza usare cache")
+ ):
++    if forecast_delegation_enabled():
++        try:
++            disable_cache_q = "true" if disable_cache else "false"
++            return forecast_post_json(f"/internal/previsione/corsa/{corsa_id}/calcola?disable_cache={disable_cache_q}", {
++                "biglietti_venduti_al_sample": req.biglietti_venduti_al_sample,
++                "festivo": req.festivo,
++            })
++        except ForecastDelegationError as exc:
++            if not ENABLE_FORECAST_FALLBACK:
++                raise HTTPException(status_code=503, detail="Forecast service unavailable") from exc
++            pass
++
++    if not ENABLE_FORECAST_FALLBACK and forecast_delegation_enabled():
++        raise HTTPException(status_code=503, detail="Forecast service unavailable")
++
+     return previsione_service.calcola_previsione(corsa_id, req, disable_cache=disable_cache)
+ 
+ 
+ @router.post(
+     "/corsa/crea",
+@@ -75,10 +98,21 @@ def previsione_endpoint(
+         404: {"description": "Tratta non trovata"},
+         409: {"description": "Corsa gi├á esistente"}
+     }
+ )
+ def crea_corsa_endpoint(data: CorsaInput):
++    if operativo_delegation_enabled():
++        try:
++            return operativo_post_json("/internal/corsa/crea", {
++                "tratta_id": data.tratta_id,
++                "data": data.data,
++                "orario": data.orario,
++                "orario_arrivo_max": data.orario_arrivo_max,
++            })
++        except OperativoDelegationError as exc:
++            _handle_operativo_fallback(exc)
++
+     return corsa_service.crea_corsa(data)
+ 
+ 
+ @router.get(
+     "/corsa/orari/{tratta_id}",
+@@ -112,10 +146,16 @@ def get_orari(tratta_id: str, data: str):
+     responses={
+         200: {"description": "Lista corse restituita correttamente"}
+     }
+ )
+ def lista_corse():
++    if operativo_delegation_enabled():
++        try:
++            return operativo_get_json("/internal/corsa/lista")
++        except OperativoDelegationError as exc:
++            _handle_operativo_fallback(exc)
++
+     return corsa_service.lista_corse()
+ 
+ 
+ @router.get(
+     "/corsa/giorno",
+@@ -132,10 +172,17 @@ def lista_corse():
+ )
+ def get_corse_by_giorno(
+     giorno: str = Query(..., description="YYYY-MM-DD"),
+     solofuture: bool = Query(False, description="Se True, restituisce solo le corse non ancora partite")
+ ):
++    if operativo_delegation_enabled():
++        try:
++            query_solofuture = "true" if solofuture else "false"
++            return operativo_get_json(f"/internal/corsa/giorno?giorno={giorno}&solofuture={query_solofuture}")
++        except OperativoDelegationError as exc:
++            _handle_operativo_fallback(exc)
++
+     return corsa_service.get_corse_by_giorno(giorno, solofuture)
+ 
+ @router.get(
+     "/corsa/{corsa_id}",
+     response_model=CorsaAPI,
+@@ -394,10 +441,16 @@ Aggiorna una corsa esistente con nuovi parametri.
+         400: {"description": "Formato data/orario non valido"},
+         404: {"description": "Corsa o tratta non trovata"}
+     }
+ )
+ def modifica_corsa(data: dict):
++    if operativo_delegation_enabled():
++        try:
++            return operativo_post_json("/internal/corsa/modifica", data)
++        except OperativoDelegationError as exc:
++            _handle_operativo_fallback(exc)
++
+     return corsa_service.modifica_corsa(data)
+ 
+ 
+ @router.post(
+     "/corsa/elimina",
+@@ -426,6 +479,12 @@ Elimina definitivamente una corsa dal sistema.
+         404: {"description": "Corsa non trovata - UUID non esistente"},
+         409: {"description": "Impossibile eliminare: assegnazione in corso"}
+     }
+ )
+ def elimina_corsa(data: dict):
++    if operativo_delegation_enabled():
++        try:
++            return operativo_post_json("/internal/corsa/elimina", data)
++        except OperativoDelegationError as exc:
++            _handle_operativo_fallback(exc)
++
+     return corsa_service.elimina_corsa(data)
+
+===== app/routers/deadhead.py =====
+
+diff --git a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/app/routers/deadhead.py b/SMART/SMART-DSS-MICROSERVICES/app/routers/deadhead.py
+index f3e29ca..e829634 100644
+--- a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/app/routers/deadhead.py
++++ b/SMART/SMART-DSS-MICROSERVICES/app/routers/deadhead.py
+@@ -1,15 +1,22 @@
+-from fastapi import APIRouter, Query
++from fastapi import APIRouter, Query, HTTPException
+ from typing import List, Optional
+ from app.services import deadhead_service
++from app.core.operativo_client import delegation_enabled as operativo_delegation_enabled, get_json as operativo_get_json, post_json as operativo_post_json, OperativoDelegationError
++from app.core.config import ENABLE_OPERATIVO_FALLBACK
+ from app.models.deadhead import (
+     DeadheadCreateInput, DeadheadUpdateInput, DeadheadDeleteInput, DeadheadResponse
+ )
+ 
+ router = APIRouter(prefix="", tags=["Deadhead Trips"])
+ 
+ 
++def _handle_operativo_fallback(exc: Exception) -> None:
++    if not ENABLE_OPERATIVO_FALLBACK:
++        raise HTTPException(status_code=503, detail="Operativo service unavailable") from exc
++
++
+ @router.post(
+     "/deadhead/crea",
+     response_model=DeadheadResponse,
+     summary="Crea deadhead trip",
+     description="""
+@@ -45,10 +52,25 @@ senza trasporto passeggeri. Tipicamente utilizzato per:
+         200: {"description": "Deadhead trip creato con successo"},
+         400: {"description": "Porto, vascello o piano non trovato"}
+     }
+ )
+ def crea_deadhead_endpoint(data: DeadheadCreateInput):
++    if operativo_delegation_enabled():
++        try:
++            return operativo_post_json("/internal/deadhead/crea", {
++                "orario_partenza_schedulato": data.orario_partenza_schedulato.isoformat(),
++                "porto_partenza_id": data.porto_partenza_id,
++                "porto_arrivo_id": data.porto_arrivo_id,
++                "idle": data.idle,
++                "non_productive_time_min": data.non_productive_time_min,
++                "consumo": data.consumo,
++                "vascello_id": data.vascello_id,
++                "piano_id": data.piano_id,
++            })
++        except OperativoDelegationError as exc:
++            _handle_operativo_fallback(exc)
++
+     return deadhead_service.crea_deadhead(data)
+ 
+ 
+ @router.post(
+     "/deadhead/modifica",
+@@ -74,10 +96,26 @@ Aggiorna un deadhead trip esistente.
+         400: {"description": "Nessun campo da aggiornare o FK non valida"},
+         404: {"description": "Deadhead trip non trovato"}
+     }
+ )
+ def modifica_deadhead_endpoint(data: DeadheadUpdateInput):
++    if operativo_delegation_enabled():
++        try:
++            return operativo_post_json("/internal/deadhead/modifica", {
++                "id": data.id,
++                "orario_partenza_schedulato": data.orario_partenza_schedulato.isoformat() if data.orario_partenza_schedulato else None,
++                "porto_partenza_id": data.porto_partenza_id,
++                "porto_arrivo_id": data.porto_arrivo_id,
++                "idle": data.idle,
++                "non_productive_time_min": data.non_productive_time_min,
++                "consumo": data.consumo,
++                "vascello_id": data.vascello_id,
++                "piano_id": data.piano_id,
++            })
++        except OperativoDelegationError as exc:
++            _handle_operativo_fallback(exc)
++
+     return deadhead_service.modifica_deadhead(data)
+ 
+ 
+ @router.post(
+     "/deadhead/elimina",
+@@ -92,10 +130,16 @@ Elimina definitivamente un deadhead trip dal sistema.
+         200: {"description": "Deadhead trip eliminato", "content": {"application/json": {"example": {"id": "uuid", "esito": "eliminato"}}}},
+         404: {"description": "Deadhead trip non trovato"}
+     }
+ )
+ def elimina_deadhead_endpoint(data: DeadheadDeleteInput):
++    if operativo_delegation_enabled():
++        try:
++            return operativo_post_json("/internal/deadhead/elimina", {"id": data.id})
++        except OperativoDelegationError as exc:
++            _handle_operativo_fallback(exc)
++
+     return deadhead_service.elimina_deadhead(data)
+ 
+ 
+ @router.get(
+     "/deadhead/lista",
+@@ -122,6 +166,18 @@ Risultati ordinati per `orario_partenza_schedulato` crescente.
+ )
+ def lista_deadhead_endpoint(
+     piano_id: Optional[str] = Query(None, description="Filtro per piano operativo"),
+     vascello_id: Optional[str] = Query(None, description="Filtro per vascello")
+ ):
++    if operativo_delegation_enabled():
++        try:
++            query = []
++            if piano_id:
++                query.append(f"piano_id={piano_id}")
++            if vascello_id:
++                query.append(f"vascello_id={vascello_id}")
++            suffix = f"?{'&'.join(query)}" if query else ""
++            return operativo_get_json(f"/internal/deadhead/lista{suffix}")
++        except OperativoDelegationError as exc:
++            _handle_operativo_fallback(exc)
++
+     return deadhead_service.lista_deadhead(piano_id, vascello_id)
+
+===== app/routers/percorso.py =====
+
+diff --git a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/app/routers/percorso.py b/SMART/SMART-DSS-MICROSERVICES/app/routers/percorso.py
+index b96f85d..90cf278 100644
+--- a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/app/routers/percorso.py
++++ b/SMART/SMART-DSS-MICROSERVICES/app/routers/percorso.py
+@@ -1,8 +1,10 @@
+ from fastapi import APIRouter, HTTPException, Path, Query
+ from typing import List, Optional
+ from app.core.database import get_connection
++from app.core.percorsi_client import delegation_enabled as percorsi_delegation_enabled, get_json as percorsi_get_json, post_json as percorsi_post_json, PercorsiDelegationError
++from app.core.config import ENABLE_PERCORSI_FALLBACK
+ from app.models.percorso import Percorso, PercorsiByCorsa, PercorsoDeleteInput, PercorsoAPI
+ from app.models.common import VariazionePercorsoInput, VariazionePercorsoResponse
+ from app.services.variazione_percorso_service import applica_variazione_percorso
+ from datetime import timedelta
+ 
+@@ -10,10 +12,15 @@ ALLOWED_ORDER_BY = {"tempo_percorrenza_min","consumo","created_at","pref","vref"
+ ALLOWED_INCLUDES = {"corsa", "tratta", "vascello"}
+ 
+ router = APIRouter(prefix="", tags=["Percorsi"])
+ 
+ 
++def _handle_percorsi_fallback(exc: Exception) -> None:
++    if not ENABLE_PERCORSI_FALLBACK:
++        raise HTTPException(status_code=503, detail="Percorsi service unavailable") from exc
++
++
+ @router.get(
+     "/percorso/{percorso_id}",
+     response_model=PercorsoAPI,
+     response_model_exclude_none=True,   
+     summary="Dettaglio percorso",
+@@ -54,10 +61,18 @@ router = APIRouter(prefix="", tags=["Percorsi"])
+ )
+ def get_percorso(
+     percorso_id: str,
+     include: Optional[str] = Query(None)
+ ):
++    if percorsi_delegation_enabled():
++        try:
++            if include:
++                return percorsi_get_json(f"/internal/percorso/{percorso_id}?include={include}")
++            return percorsi_get_json(f"/internal/percorso/{percorso_id}")
++        except PercorsiDelegationError as exc:
++            _handle_percorsi_fallback(exc)
++
+     includes = set(s.strip() for s in include.split(",")) if include else set()
+     invalid = includes - ALLOWED_INCLUDES
+     if invalid:
+         raise HTTPException(
+             400,
+@@ -304,10 +319,25 @@ def get_percorsi_by_corsa(
+     mode: str = Query("ASC"),
+     limit: int = Query(100, ge=1),
+     vascello_id: Optional[str] = Query(None),
+     include: Optional[str] = Query(None)
+ ):
++    if percorsi_delegation_enabled():
++        try:
++            query_parts = [
++                f"order_by={order_by}",
++                f"mode={mode}",
++                f"limit={limit}",
++            ]
++            if vascello_id is not None:
++                query_parts.append(f"vascello_id={vascello_id}")
++            if include:
++                query_parts.append(f"include={include}")
++            return percorsi_get_json(f"/internal/percorso/by_corsa/{corsa_id}?{'&'.join(query_parts)}")
++        except PercorsiDelegationError as exc:
++            _handle_percorsi_fallback(exc)
++
+     if order_by not in ALLOWED_ORDER_BY:
+         raise HTTPException(400, detail=f"order_by non valido. Valori ammessi: {sorted(ALLOWED_ORDER_BY)}")
+     includes = set(s.strip() for s in include.split(",")) if include else set()
+     invalid = includes - ALLOWED_INCLUDES
+     if invalid:
+@@ -567,10 +597,16 @@ def get_percorsi_by_corsa(
+         200: {"description": "Percorso eliminato"},
+         404: {"description": "Percorso non trovato"}
+     }
+ )
+ def elimina_percorso(payload: PercorsoDeleteInput):
++    if percorsi_delegation_enabled():
++        try:
++            return percorsi_post_json("/internal/percorso/elimina", {"id": payload.id})
++        except PercorsiDelegationError as exc:
++            _handle_percorsi_fallback(exc)
++
+     conn = get_connection()
+     cur = conn.cursor()
+ 
+     try:
+         # verifica esistenza
+@@ -634,7 +670,17 @@ def elimina_percorso(payload: PercorsoDeleteInput):
+         400: {"description": "Tipo variazione non valido o percorso non adatto"},
+         404: {"description": "Percorso non trovato"}
+     }
+ )
+ def post_applica_variazione(payload: VariazionePercorsoInput):
++    if percorsi_delegation_enabled():
++        try:
++            return percorsi_post_json("/internal/percorso/applica_variazione", {
++                "percorso_id": payload.percorso_id,
++                "tipo_variazione": payload.tipo_variazione,
++                "offset_deviazione_nm": payload.offset_deviazione_nm,
++            })
++        except PercorsiDelegationError as exc:
++            _handle_percorsi_fallback(exc)
++
+     return applica_variazione_percorso(payload)
+ 
+
+===== app/routers/piano_operativo.py =====
+
+diff --git a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/app/routers/piano_operativo.py b/SMART/SMART-DSS-MICROSERVICES/app/routers/piano_operativo.py
+index 159d7b0..ea32bfd 100644
+--- a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/app/routers/piano_operativo.py
++++ b/SMART/SMART-DSS-MICROSERVICES/app/routers/piano_operativo.py
+@@ -1,14 +1,21 @@
+ from fastapi import APIRouter, Query, HTTPException
+ from app.services import pianificazione_service
+ from app.models.piano import PianoCreateInput, PianoResponse, PianoUpdateInput, PianoDeleteInput, PianoValidaInput, PianoValidaResponse
++from app.core.operativo_client import delegation_enabled as operativo_delegation_enabled, get_json as operativo_get_json, post_json as operativo_post_json, OperativoDelegationError
++from app.core.config import ENABLE_OPERATIVO_FALLBACK
+ from typing import List, Optional
+ from datetime import date
+ 
+ router = APIRouter(prefix="", tags=["Piano Operativo"])
+ 
+ 
++def _handle_operativo_fallback(exc: Exception) -> None:
++    if not ENABLE_OPERATIVO_FALLBACK:
++        raise HTTPException(status_code=503, detail="Operativo service unavailable") from exc
++
++
+ @router.post(
+     "/piano/crea",
+     response_model=PianoResponse,
+     summary="Crea piano operativo",
+     description="""
+@@ -46,10 +53,22 @@ Contenitore per le assegnazioni vascello-percorso di una giornata operativa.
+         200: {"description": "Piano operativo creato con successo"},
+         409: {"description": "Piano gi├á esistente per la data specificata"}
+     }
+ )
+ def crea_piano_endpoint(data: PianoCreateInput):
++    if operativo_delegation_enabled():
++        try:
++            return operativo_post_json("/internal/piano/crea", {
++                "data_riferimento": data.data_riferimento.isoformat(),
++                "stato": data.stato,
++                "kpi_profitto_stimato": data.kpi_profitto_stimato,
++                "kpi_robustezza": data.kpi_robustezza,
++                "versione": data.versione,
++            })
++        except OperativoDelegationError as exc:
++            _handle_operativo_fallback(exc)
++
+     return pianificazione_service.crea_piano(data)
+ 
+ 
+ @router.post(
+     "/piano/modifica",
+@@ -76,10 +95,23 @@ Aggiorna un piano operativo esistente.
+         404: {"description": "Piano non trovato"},
+         409: {"description": "Conflitto: transizione stato non valida"}
+     }
+ )
+ def modifica_piano_endpoint(data: PianoUpdateInput):
++    if operativo_delegation_enabled():
++        try:
++            return operativo_post_json("/internal/piano/modifica", {
++                "id": data.id,
++                "data_riferimento": data.data_riferimento.isoformat() if data.data_riferimento else None,
++                "stato": data.stato,
++                "kpi_profitto_stimato": data.kpi_profitto_stimato,
++                "kpi_robustezza": data.kpi_robustezza,
++                "versione": data.versione,
++            })
++        except OperativoDelegationError as exc:
++            _handle_operativo_fallback(exc)
++
+     return pianificazione_service.modifica_piano(data)
+ 
+ 
+ @router.post(
+     "/piano/elimina",
+@@ -103,10 +135,16 @@ Usare stato `ARCHIVIATO` per mantenere lo storico.
+         404: {"description": "Piano non trovato"},
+         409: {"description": "Impossibile eliminare: piano attivo o assegnazioni in corso"}
+     }
+ )
+ def elimina_piano_endpoint(data: PianoDeleteInput):
++    if operativo_delegation_enabled():
++        try:
++            return operativo_post_json("/internal/piano/elimina", {"id": data.id})
++        except OperativoDelegationError as exc:
++            _handle_operativo_fallback(exc)
++
+     return pianificazione_service.elimina_piano(data)
+ 
+ 
+ @router.get(
+     "/piano/lista",
+@@ -133,10 +171,18 @@ Risultati ordinati per `data_riferimento` decrescente (pi├╣ recenti prima).
+     responses={
+         200: {"description": "Lista piani restituita con successo"}
+     }
+ )
+ def lista_piano_endpoint(data_riferimento: Optional[date] = Query(None, description="Filtro per data_riferimento (YYYY-MM-DD)")):
++    if operativo_delegation_enabled():
++        try:
++            if data_riferimento is None:
++                return operativo_get_json("/internal/piano/lista")
++            return operativo_get_json(f"/internal/piano/lista?data_riferimento={data_riferimento.isoformat()}")
++        except OperativoDelegationError as exc:
++            _handle_operativo_fallback(exc)
++
+     return pianificazione_service.lista_piani(data_riferimento)
+ 
+ 
+ @router.post(
+     "/piano/valida",
+@@ -195,9 +241,15 @@ Non include le assegnazioni dei vascelli.
+         200: {"description": "Dettagli del piano operativo"},
+         404: {"description": "Piano operativo non trovato"}
+     }
+ )
+ def get_piano_by_id_endpoint(piano_id: str):
++    if operativo_delegation_enabled():
++        try:
++            return operativo_get_json(f"/internal/piano/{piano_id}")
++        except OperativoDelegationError as exc:
++            _handle_operativo_fallback(exc)
++
+     piano = pianificazione_service.get_piano_by_id(piano_id)
+     if not piano:
+         raise HTTPException(status_code=404, detail="Piano operativo non trovato")
+     return piano
+
+===== app/routers/porto.py =====
+
+diff --git a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/app/routers/porto.py b/SMART/SMART-DSS-MICROSERVICES/app/routers/porto.py
+index 04e5c4e..5d3c5b1 100644
+--- a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/app/routers/porto.py
++++ b/SMART/SMART-DSS-MICROSERVICES/app/routers/porto.py
+@@ -1,12 +1,19 @@
+ from fastapi import APIRouter, HTTPException
+ from typing import List
+ from app.core.database import get_connection
++from app.core.anagrafica_client import delegation_enabled, get_json, post_json, AnagraficaDelegationError
++from app.core.config import ENABLE_ANAGRAFICA_FALLBACK
+ from app.models.porto import PortoInput, Porto, PortoModificaInput, PortoDeleteInput
+ 
+ router = APIRouter(prefix="", tags=["Porti"])
+ 
++
++def _handle_anagrafica_fallback(exc: Exception) -> None:
++    if not ENABLE_ANAGRAFICA_FALLBACK:
++        raise HTTPException(status_code=503, detail="Anagrafica service unavailable") from exc
++
+ @router.post(
+     "/porto/crea",
+     response_model=Porto,
+     summary="Crea nuovo porto",
+     description="""
+@@ -35,10 +42,20 @@ Registra un nuovo porto nel sistema con le relative coordinate geografiche.
+         400: {"description": "Coordinate non valide"},
+         409: {"description": "Porto con lo stesso nome gi├á esistente"}
+     }
+ )
+ def crea_porto(data: PortoInput):
++    if delegation_enabled():
++        try:
++            return post_json("/internal/porto/crea", {
++                "nome": data.nome,
++                "lat": data.lat,
++                "lon": data.lon,
++            })
++        except AnagraficaDelegationError as exc:
++            _handle_anagrafica_fallback(exc)
++
+     conn = get_connection()
+     cur = conn.cursor()
+     cur.execute("""
+         INSERT INTO porto (id, nome, coordinate_gps)
+         VALUES (
+@@ -74,10 +91,16 @@ I risultati sono ordinati alfabeticamente per nome del porto.
+     responses={
+         200: {"description": "Lista porti restituita con successo"}
+     }
+ )
+ def lista_porti():
++    if delegation_enabled():
++        try:
++            return get_json("/internal/porto/lista")
++        except AnagraficaDelegationError as exc:
++            _handle_anagrafica_fallback(exc)
++
+     conn = get_connection()
+     cur = conn.cursor()
+     cur.execute("""
+         SELECT id, nome, ST_Y(coordinate_gps), ST_X(coordinate_gps)
+         FROM porto
+@@ -110,10 +133,19 @@ Oggetto `Porto` con:
+         200: {"description": "Dettaglio porto restituito correttamente"},
+         404: {"description": "Porto non trovato - UUID non esistente"}
+     }
+ )
+ def get_porto(porto_id: str):
++    if delegation_enabled():
++        try:
++            data = get_json(f"/internal/porto/{porto_id}")
++            if data is None:
++                raise HTTPException(404, "Porto non trovato")
++            return data
++        except AnagraficaDelegationError as exc:
++            _handle_anagrafica_fallback(exc)
++
+     conn = get_connection()
+     cur = conn.cursor()
+     cur.execute("""
+         SELECT id, nome, ST_Y(coordinate_gps), ST_X(coordinate_gps)
+         FROM porto
+@@ -145,10 +177,19 @@ Ricerca un porto tramite il suo nome identificativo.
+         200: {"description": "Porto trovato"},
+         404: {"description": "Nessun porto trovato con il nome specificato"}
+     }
+ )
+ def get_porto_by_name(nome: str):
++    if delegation_enabled():
++        try:
++            data = get_json(f"/internal/porto/by_name/{nome}")
++            if data is None:
++                raise HTTPException(status_code=404, detail=f"Nessun porto trovato con nome='{nome}'")
++            return data
++        except AnagraficaDelegationError as exc:
++            _handle_anagrafica_fallback(exc)
++
+     conn = get_connection()
+     cur = conn.cursor()
+     cur.execute("""
+         SELECT id, nome, ST_Y(coordinate_gps), ST_X(coordinate_gps)
+         FROM porto
+@@ -183,10 +224,21 @@ Aggiorna i dati di un porto esistente.
+         200: {"description": "Porto aggiornato correttamente"},
+         404: {"description": "Porto non trovato - UUID non esistente"}
+     }
+ )
+ def modifica_porto(data: PortoModificaInput):
++    if delegation_enabled():
++        try:
++            return post_json("/internal/porto/modifica", {
++                "id": data.id,
++                "nome": data.nome,
++                "lat": data.lat,
++                "lon": data.lon,
++            })
++        except AnagraficaDelegationError as exc:
++            _handle_anagrafica_fallback(exc)
++
+     conn = get_connection()
+     cur = conn.cursor()
+     cur.execute("""
+         UPDATE porto
+         SET nome = %s, coordinate_gps = ST_SetSRID(ST_Point(%s, %s), 4326)
+@@ -219,10 +271,16 @@ Elimina definitivamente un porto dal sistema.
+         200: {"description": "Porto eliminato con successo", "content": {"application/json": {"example": {"id": "uuid", "esito": "eliminato"}}}},
+         404: {"description": "Porto non trovato - UUID non esistente"}
+     }
+ )
+ def elimina_porto(data: PortoDeleteInput):
++    if delegation_enabled():
++        try:
++            return post_json("/internal/porto/elimina", {"id": data.id})
++        except AnagraficaDelegationError as exc:
++            _handle_anagrafica_fallback(exc)
++
+     conn = get_connection()
+     cur = conn.cursor()
+     cur.execute("DELETE FROM porto WHERE id = %s RETURNING id;", (data.id,))
+     row = cur.fetchone()
+     conn.commit()
+
+===== app/routers/replanning.py =====
+
+diff --git a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/app/routers/replanning.py b/SMART/SMART-DSS-MICROSERVICES/app/routers/replanning.py
+index f952cf5..2169686 100644
+--- a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/app/routers/replanning.py
++++ b/SMART/SMART-DSS-MICROSERVICES/app/routers/replanning.py
+@@ -1,7 +1,6 @@
+ from fastapi import APIRouter, HTTPException
+-from typing import Optional
+ from app.services import replanning_service
+ from app.models.replanning import CheckReplanningResponse
+ from app.core.scheduler import get_periodic_replanning_status
+ 
+ router = APIRouter(prefix="", tags=["Replanning"])
+@@ -28,43 +27,32 @@ def check_replanning_status_endpoint():
+     "/check_replanning",
+     response_model=CheckReplanningResponse,
+     response_model_exclude_none=True,
+     summary="Verifica automatica necessit├á di replanning",
+     description="""
+-Esegue il controllo di replanning su un piano operativo di riferimento.
++Esegue il controllo di replanning sul piano operativo del giorno corrente.
+ 
+ ### Obiettivo
+ Capire se lo stato operativo corrente (assegnazioni in esecuzione + vincoli temporali) richiede una ricalibrazione del piano tramite il microservizio di replanning.
+ 
+-### Query parameters
+-- **virtuale** (boolean, obbligatorio):
+-    - `true` ÔåÆ considera solo assegnazioni con `virtuale=true`
+-    - `false` ÔåÆ considera solo assegnazioni con `virtuale=false`
+-- **piano_id** (string, opzionale):
+-    - se valorizzato, usa quel piano come riferimento
+-    - se assente, cerca automaticamente il piano `IN_CORSO` del giorno
+-
+ ### Flusso elaborativo
+-1. Se `piano_id` ├¿ presente, recupera il piano per ID; altrimenti usa il piano `IN_CORSO` di oggi.
++1. Cerca il piano con stato `IN_CORSO` riferito a oggi.
+ 2. Recupera e raggruppa le assegnazioni per vascello.
+-3. Filtra le assegnazioni in base al parametro `virtuale`.
+-4. Arricchisce ogni assegnazione con dettagli di percorso e corsa.
+-5. Se `virtuale=true`, sovrascrive `corsa.orario_partenza_schedulato` con `orario_simulazione` e scala `percorso.tempo_percorrenza_min` dividendo per `sim_speed_factor` da configurazione Kafka.
+-6. Mappa gli MMSI dei vascelli coinvolti.
+-7. Invia il payload al servizio esterno `REPLANNING_SERVICE_URL/replanning/check`.
++3. Arricchisce ogni assegnazione con dettagli di percorso e corsa.
++4. Mappa gli MMSI dei vascelli coinvolti.
++5. Invia il payload al servizio esterno `REPLANNING_SERVICE_URL/replanning/check`.
+ 
+ ### Response
+ - **success**: esito dell'operazione gateway.
+ - **message**: messaggio sintetico lato API Gateway.
+ - **piano**: dettagli del piano IN_CORSO (se trovato).
+ - **assegnazioni_per_vascello**: mappa `vascello_id -> assegnazioni arricchite`.
+ - **mmsi_per_vascello**: mappa `vascello_id -> mmsi`.
+ - **risposta_replanning**: risultato del servizio esterno (`needs_replanning`, motivazioni, ecc.).
+ 
+ ### Note
+-- Se `piano_id` ├¿ valorizzato ma non esiste, la risposta ├¿ `200` con `success=false`.
+-- Se `piano_id` ├¿ assente e non esiste alcun piano IN_CORSO per oggi, la risposta ├¿ `200` con `success=false`.
++- Se non esiste alcun piano IN_CORSO per oggi, la risposta ├¿ `200` con `success=false`.
+ - In caso di errore inatteso interno, viene restituito `500`.
+     """,
+     responses={
+         200: {
+             "description": "Verifica replanning completata",
+@@ -124,14 +112,11 @@ Capire se lo stato operativo corrente (assegnazioni in esecuzione + vincoli temp
+                 }
+             }
+         }
+     }
+ )
+-def check_replanning_endpoint(
+-    virtuale: bool,
+-    piano_id: Optional[str] = None
+-):
++def check_replanning_endpoint():
+     try:
+-        risultato = replanning_service.check_replanning(virtuale=virtuale, piano_id=piano_id)
++        risultato = replanning_service.check_replanning()
+         return risultato
+     except Exception as e:
+         raise HTTPException(status_code=500, detail=str(e))
+
+===== app/routers/simulazione.py =====
+
+diff --git a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/app/routers/simulazione.py b/SMART/SMART-DSS-MICROSERVICES/app/routers/simulazione.py
+index 60860ed..7fc8071 100644
+--- a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/app/routers/simulazione.py
++++ b/SMART/SMART-DSS-MICROSERVICES/app/routers/simulazione.py
+@@ -1,8 +1,8 @@
+ from fastapi import APIRouter, HTTPException
+ from app.services.simulatore_service import build_and_run_simulation, simula_piano
+-from app.core.database import get_connection
++from app.core.operativo_client import get_json as operativo_get_json, OperativoDelegationError
+ import os
+ import glob
+ import json
+ from app.models.common import *
+ 
+@@ -142,36 +142,11 @@ Se un piano ├¿ presente su file ma non ha assegnazioni in questi stati, viene es
+ - **stato_assegnazione**: stato principale del piano (`IN_CORSO` se presente, altrimenti `PIANIFICATA`)
+ - **stati_assegnazione**: lista degli stati validi trovati per il piano
+   """,
+   responses={
+     200: {
+-      "description": "Lista delle simulazioni schedulate filtrate per assegnazioni PIANIFICATA/IN_CORSO",
+-      "content": {
+-        "application/json": {
+-          "example": [
+-            {
+-              "piano_id": "550e8400-e29b-41d4-a716-446655440000",
+-              "status": "ok",
+-              "assegnazioni_virtuali_trovate": 3,
+-              "simulazioni_schedulate": 3,
+-              "orario_base_simulazione": "2026-02-24T14:00:00+01:00",
+-              "risultati": [
+-                {
+-                  "assegnazione_id": "550e8400-e29b-41d4-a716-446655440010",
+-                  "orario_originale": "2026-02-24T08:00:00+01:00",
+-                  "orario_simulazione": "2026-02-24T14:00:05+01:00",
+-                  "delta_from_first_seconds": 0,
+-                  "job_id": "sim_piano_..."
+-                }
+-              ],
+-              "messaggio": "Schedulate 3 simulazioni a partire da 14:00:00",
+-              "stato_assegnazione": "IN_CORSO",
+-              "stati_assegnazione": ["IN_CORSO", "PIANIFICATA"]
+-            }
+-          ]
+-        }
+-      }
++      "description": "Lista delle simulazioni schedulate filtrate per assegnazioni PIANIFICATA/IN_CORSO"
+     },
+     404: {
+       "description": "Nessun file trovato o nessuna simulazione con assegnazioni PIANIFICATA/IN_CORSO"
+     }
+   }
+@@ -186,55 +161,38 @@ def get_schedulate_simulations(piano_id: str = None):
+   file_contents = []
+   for file_path in files:
+     with open(file_path, 'r', encoding='utf-8') as f:
+       try:
+         payload = json.load(f)
+-        pid = payload.get("piano_id")
+-        if pid:
++        if isinstance(payload, dict) and payload.get("piano_id"):
+           file_contents.append(payload)
+       except Exception as e:
+         file_contents.append({"file": file_path, "error": str(e)})
+ 
+   candidates = [item for item in file_contents if isinstance(item, dict) and item.get("piano_id")]
+   if not candidates:
+     raise HTTPException(status_code=404, detail="Nessuna simulazione valida trovata")
+ 
+-  piano_ids = [item["piano_id"] for item in candidates]
+-
+-  conn = get_connection()
+-  cur = conn.cursor()
+-  try:
+-    cur.execute(
+-      """
+-      SELECT
+-        a.piano_id::text AS piano_id,
+-        ARRAY_AGG(DISTINCT a.stato_esecuzione) AS stati_assegnazione
+-      FROM assegnazione a
+-      WHERE a.piano_id::text = ANY(%s)
+-        AND a.stato_esecuzione IN ('PIANIFICATA', 'IN_CORSO')
+-      GROUP BY a.piano_id
+-      """,
+-      (piano_ids,)
+-    )
+-    rows = cur.fetchall()
+-  finally:
+-    cur.close()
+-    conn.close()
+-
+-  stati_by_piano = {row[0]: row[1] for row in rows}
+-
+   results = []
+   for item in candidates:
+     pid = item["piano_id"]
+-    stati = stati_by_piano.get(pid)
+-    if stati:
+-      stati_list = sorted(stati, key=lambda s: 0 if s == "IN_CORSO" else 1)
+-      stato_principale = "IN_CORSO" if "IN_CORSO" in stati_list else "PIANIFICATA"
+-      enriched = dict(item)
+-      enriched["stati_assegnazione"] = stati_list
+-      enriched["stato_assegnazione"] = stato_principale
+-      results.append(enriched)
++    try:
++      assegnazioni = operativo_get_json(f"/internal/assegnazione/by_piano/{pid}")
++    except OperativoDelegationError as exc:
++      raise HTTPException(status_code=503, detail="Operativo service unavailable") from exc
++
++    stati_validi = sorted(
++      {a.get("stato_esecuzione") for a in assegnazioni if a.get("stato_esecuzione") in {"PIANIFICATA", "IN_CORSO"}},
++      key=lambda s: 0 if s == "IN_CORSO" else 1,
++    )
++    if not stati_validi:
++      continue
++
++    enriched = dict(item)
++    enriched["stati_assegnazione"] = stati_validi
++    enriched["stato_assegnazione"] = "IN_CORSO" if "IN_CORSO" in stati_validi else "PIANIFICATA"
++    results.append(enriched)
+ 
+   if not results:
+     raise HTTPException(
+       status_code=404,
+       detail="Nessuna simulazione schedulata con assegnazioni in stato PIANIFICATA o IN_CORSO"
+
+===== app/routers/tratta.py =====
+
+diff --git a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/app/routers/tratta.py b/SMART/SMART-DSS-MICROSERVICES/app/routers/tratta.py
+index 35854ab..ae6010a 100644
+--- a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/app/routers/tratta.py
++++ b/SMART/SMART-DSS-MICROSERVICES/app/routers/tratta.py
+@@ -1,18 +1,25 @@
+ from fastapi import APIRouter, HTTPException
+ from typing import List
+ from app.core.database import get_connection
++from app.core.anagrafica_client import delegation_enabled, get_json, post_json, AnagraficaDelegationError
++from app.core.config import ENABLE_ANAGRAFICA_FALLBACK
+ from app.models.tratta import (
+     TrattaInputById, TrattaMultiInputById, TrattaCreated,
+     TrattaMultiCreated, TrattaListItem, TrattaDetail, TrattaModificaInput
+ )
+ import json
+ import uuid
+ 
+ router = APIRouter(prefix="", tags=["Tratte"])
+ 
+ 
++def _handle_anagrafica_fallback(exc: Exception) -> None:
++    if not ENABLE_ANAGRAFICA_FALLBACK:
++        raise HTTPException(status_code=503, detail="Anagrafica service unavailable") from exc
++
++
+ @router.post(
+     "/tratta/crea",
+     response_model=TrattaCreated,
+     summary="Crea tratta diretta",
+     description="""
+@@ -38,10 +45,20 @@ Crea una nuova tratta diretta (point-to-point) tra due porti.
+         404: {"description": "Porto partenza o arrivo non trovato"},
+         409: {"description": "Tratta diretta gi├á esistente tra questi porti"}
+     }
+ )
+ def crea_tratta(data: TrattaInputById):
++    if delegation_enabled():
++        try:
++            return post_json("/internal/tratta/crea", {
++                "id": str(data.id) if data.id else None,
++                "porto_partenza_id": str(data.porto_partenza_id),
++                "porto_arrivo_id": str(data.porto_arrivo_id),
++            })
++        except AnagraficaDelegationError as exc:
++            _handle_anagrafica_fallback(exc)
++
+     conn = get_connection()
+     cur = conn.cursor()
+     try:
+         cur.execute("SELECT nome, ST_X(coordinate_gps), ST_Y(coordinate_gps) FROM porto WHERE id = %s", (str(data.porto_partenza_id),))
+         p1 = cur.fetchone()
+@@ -115,10 +132,19 @@ Include:
+         400: {"description": "Lista porti insufficiente (minimo 2)"},
+         404: {"description": "Uno o pi├╣ porti non trovati"}
+     }
+ )
+ def crea_tratta_multiporto(data: TrattaMultiInputById):
++    if delegation_enabled():
++        try:
++            return post_json("/internal/tratta/crea_multi", {
++                "id": str(data.id) if data.id else None,
++                "porti_ids": [str(porto_id) for porto_id in data.porti_ids],
++            })
++        except AnagraficaDelegationError as exc:
++            _handle_anagrafica_fallback(exc)
++
+     if len(data.porti_ids) < 2:
+         raise HTTPException(400, "Servono almeno due porti.")
+     conn = get_connection()
+     cur = conn.cursor()
+     try:
+@@ -184,10 +210,16 @@ Per ogni tratta:
+     responses={
+         200: {"description": "Lista tratte restituita con successo"}
+     }
+ )
+ def lista_tratte():
++    if delegation_enabled():
++        try:
++            return get_json("/internal/tratta/lista")
++        except AnagraficaDelegationError as exc:
++            _handle_anagrafica_fallback(exc)
++
+     conn = get_connection()
+     cur = conn.cursor()
+     try:
+         cur.execute("SELECT id, nome, porto_partenza_id, porto_arrivo_id, porti_intermedi, tratta_multiporto FROM tratta ORDER BY nome ASC;")
+         rows = cur.fetchall()
+@@ -222,10 +254,19 @@ Restituisce i dettagli completi di una tratta, inclusa la geometria.
+         200: {"description": "Dettaglio tratta con geometria"},
+         404: {"description": "Tratta non trovata - UUID non esistente"}
+     }
+ )
+ def get_tratta(tratta_id: str):
++    if delegation_enabled():
++        try:
++            data = get_json(f"/internal/tratta/{tratta_id}")
++            if data is None:
++                raise HTTPException(404, "Tratta non trovata")
++            return data
++        except AnagraficaDelegationError as exc:
++            _handle_anagrafica_fallback(exc)
++
+     conn = get_connection(); cur = conn.cursor()
+     try:
+         cur.execute("""
+             SELECT id, nome, porto_partenza_id, porto_arrivo_id, distanza_miglia, porti_intermedi, tratta_multiporto, ST_AsGeoJSON(geom_rotta_standard)
+             FROM tratta WHERE id = %s
+@@ -264,10 +305,20 @@ Aggiorna una tratta esistente con nuovi porti di partenza e/o arrivo.
+         200: {"description": "Tratta aggiornata con nuova geometria"},
+         404: {"description": "Tratta o porto non trovato"}
+     }
+ )
+ def modifica_tratta(data: TrattaModificaInput):
++    if delegation_enabled():
++        try:
++            return post_json("/internal/tratta/modifica", {
++                "id": data.id,
++                "porto_partenza_id": data.porto_partenza_id,
++                "porto_arrivo_id": data.porto_arrivo_id,
++            })
++        except AnagraficaDelegationError as exc:
++            _handle_anagrafica_fallback(exc)
++
+     conn = get_connection(); cur = conn.cursor()
+     try:
+         cur.execute("SELECT nome, ST_X(coordinate_gps), ST_Y(coordinate_gps) FROM porto WHERE id = %s", (data.porto_partenza_id,))
+         p1 = cur.fetchone()
+         if p1 is None:
+@@ -319,10 +370,16 @@ Elimina definitivamente una tratta dal sistema.
+         200: {"description": "Tratta eliminata con successo", "content": {"application/json": {"example": {"id": "uuid", "esito": "eliminato"}}}},
+         404: {"description": "Tratta non trovata - UUID non esistente"}
+     }
+ )
+ def elimina_tratta(data: dict):
++    if delegation_enabled():
++        try:
++            return post_json("/internal/tratta/elimina", data)
++        except AnagraficaDelegationError as exc:
++            _handle_anagrafica_fallback(exc)
++
+     conn = get_connection(); cur = conn.cursor()
+     try:
+         cur.execute("DELETE FROM tratta WHERE id = %s RETURNING id;", (data.get('id'),))
+         row = cur.fetchone(); conn.commit()
+         if row is None:
+
+===== app/routers/vascello.py =====
+
+diff --git a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/app/routers/vascello.py b/SMART/SMART-DSS-MICROSERVICES/app/routers/vascello.py
+index e2a51c7..6d1a480 100644
+--- a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/app/routers/vascello.py
++++ b/SMART/SMART-DSS-MICROSERVICES/app/routers/vascello.py
+@@ -1,16 +1,23 @@
+ from fastapi import APIRouter, HTTPException
+ from typing import List
+ from datetime import timedelta
+ import json
+ from app.core.database import get_connection
++from app.core.anagrafica_client import delegation_enabled, get_json, post_json, AnagraficaDelegationError
++from app.core.config import ENABLE_ANAGRAFICA_FALLBACK
+ from app.models.vascello import VascelloInput, Vascello, VascelloModificaInput, VascelloDeleteInput
+ from app.models.percorso import PercorsoAttivoResponse
+ 
+ router = APIRouter(prefix="", tags=["Vascelli"])
+ 
+ 
++def _handle_anagrafica_fallback(exc: Exception) -> None:
++    if not ENABLE_ANAGRAFICA_FALLBACK:
++        raise HTTPException(status_code=503, detail="Anagrafica service unavailable") from exc
++
++
+ @router.post(
+     "/vascello/crea",
+     response_model=Vascello,
+     summary="Registra nuovo vascello",
+     description="""
+@@ -38,10 +45,24 @@ Oggetto JSON con curve consumo parametrizzate per velocit├á:
+         400: {"description": "Dati non validi"},
+         409: {"description": "MMSI gi├á esistente nel sistema"}
+     }
+ )
+ def crea_vascello(data: VascelloInput):
++    if delegation_enabled():
++        try:
++            return post_json("/internal/vascello/crea", {
++                "mmsi": data.mmsi,
++                "nome": data.nome,
++                "capacita_passeggeri": data.capacita_passeggeri,
++                "costo_orario_esercizio": data.costo_orario_esercizio,
++                "velocita_max_nodi": data.velocita_max_nodi,
++                "stato_salute_aggregato": data.stato_salute_aggregato,
++                "profilo_consumo_json": data.profilo_consumo_json,
++            })
++        except AnagraficaDelegationError as exc:
++            _handle_anagrafica_fallback(exc)
++
+     conn = get_connection(); cur = conn.cursor()
+     try:
+         cur.execute("""
+             INSERT INTO vascello (id, mmsi, nome, capacita_passeggeri, costo_orario_esercizio, velocita_max_nodi, stato_salute_aggregato, profilo_consumo_json, data_creazione)
+             VALUES (gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, now()) RETURNING id, data_creazione;
+@@ -72,10 +93,16 @@ I risultati sono ordinati alfabeticamente per nome del vascello.
+     responses={
+         200: {"description": "Lista flotta restituita con successo"}
+     }
+ )
+ def lista_vascelli():
++    if delegation_enabled():
++        try:
++            return get_json("/internal/vascello/lista")
++        except AnagraficaDelegationError as exc:
++            _handle_anagrafica_fallback(exc)
++
+     conn = get_connection(); cur = conn.cursor()
+     cur.execute("""
+         SELECT id, mmsi, nome, capacita_passeggeri, costo_orario_esercizio, velocita_max_nodi, stato_salute_aggregato, profilo_consumo_json, data_creazione FROM vascello ORDER BY nome;
+     """)
+     rows = cur.fetchall(); conn.close()
+@@ -99,10 +126,19 @@ Oggetto `Vascello` completo con tutti i parametri registrati.
+         200: {"description": "Dettaglio vascello restituito"},
+         404: {"description": "Vascello non trovato - UUID non esistente"}
+     }
+ )
+ def get_vascello(vascello_id: str):
++    if delegation_enabled():
++        try:
++            data = get_json(f"/internal/vascello/{vascello_id}")
++            if data is None:
++                raise HTTPException(404, "Vascello non trovato")
++            return data
++        except AnagraficaDelegationError as exc:
++            _handle_anagrafica_fallback(exc)
++
+     conn = get_connection(); cur = conn.cursor()
+     cur.execute("""
+         SELECT id, mmsi, nome, capacita_passeggeri, costo_orario_esercizio, velocita_max_nodi, stato_salute_aggregato, profilo_consumo_json, data_creazione FROM vascello WHERE id = %s
+     """, (vascello_id,))
+     row = cur.fetchone(); conn.close()
+@@ -133,10 +169,19 @@ per l'identificazione delle navi nei sistemi AIS e di comunicazione.
+         200: {"description": "Vascello trovato"},
+         404: {"description": "Nessun vascello trovato con il MMSI specificato"}
+     }
+ )
+ def get_vascello_by_mmsi(mmsi: str):
++    if delegation_enabled():
++        try:
++            data = get_json(f"/internal/vascello/by_mmsi/{mmsi}")
++            if data is None:
++                raise HTTPException(404, detail=f"Nessun vascello trovato con MMSI={mmsi}")
++            return data
++        except AnagraficaDelegationError as exc:
++            _handle_anagrafica_fallback(exc)
++
+     conn = get_connection(); cur = conn.cursor()
+     cur.execute("""
+         SELECT id, mmsi, nome, capacita_passeggeri, costo_orario_esercizio, velocita_max_nodi, stato_salute_aggregato, profilo_consumo_json, data_creazione FROM vascello WHERE mmsi = %s LIMIT 1;
+     """, (mmsi,))
+     row = cur.fetchone(); conn.close()
+@@ -287,10 +332,25 @@ Tutti i campi del modello `VascelloInput` possono essere aggiornati:
+         200: {"description": "Vascello aggiornato correttamente"},
+         404: {"description": "Vascello non trovato - UUID non esistente"}
+     }
+ )
+ def modifica_vascello(data: VascelloModificaInput):
++    if delegation_enabled():
++        try:
++            return post_json("/internal/vascello/modifica", {
++                "id": data.id,
++                "mmsi": data.mmsi,
++                "nome": data.nome,
++                "capacita_passeggeri": data.capacita_passeggeri,
++                "costo_orario_esercizio": data.costo_orario_esercizio,
++                "velocita_max_nodi": data.velocita_max_nodi,
++                "stato_salute_aggregato": data.stato_salute_aggregato,
++                "profilo_consumo_json": data.profilo_consumo_json,
++            })
++        except AnagraficaDelegationError as exc:
++            _handle_anagrafica_fallback(exc)
++
+     conn = get_connection(); cur = conn.cursor()
+     cur.execute("""
+         UPDATE vascello SET mmsi=%s, nome=%s, capacita_passeggeri=%s, costo_orario_esercizio=%s, velocita_max_nodi=%s, stato_salute_aggregato=%s, profilo_consumo_json=%s WHERE id=%s RETURNING id, mmsi, nome, capacita_passeggeri, costo_orario_esercizio, velocita_max_nodi, stato_salute_aggregato, profilo_consumo_json, data_creazione;
+     """, (data.mmsi, data.nome, data.capacita_passeggeri, data.costo_orario_esercizio, data.velocita_max_nodi, data.stato_salute_aggregato, json.dumps(data.profilo_consumo_json) if data.profilo_consumo_json else None, data.id))
+     row = cur.fetchone(); conn.commit(); conn.close()
+@@ -320,10 +380,16 @@ Elimina definitivamente un vascello dal sistema.
+         200: {"description": "Vascello eliminato con successo", "content": {"application/json": {"example": {"id": "uuid", "esito": "eliminato"}}}},
+         404: {"description": "Vascello non trovato - UUID non esistente"}
+     }
+ )
+ def elimina_vascello(data: VascelloDeleteInput):
++    if delegation_enabled():
++        try:
++            return post_json("/internal/vascello/elimina", {"id": data.id})
++        except AnagraficaDelegationError as exc:
++            _handle_anagrafica_fallback(exc)
++
+     conn = get_connection(); cur = conn.cursor()
+     cur.execute("DELETE FROM vascello WHERE id = %s RETURNING id;", (data.id,))
+     row = cur.fetchone(); conn.commit(); conn.close()
+     if row is None:
+         raise HTTPException(404, "Vascello non trovato")
+
+===== app/services/assegnazione_service.py =====
+
+diff --git a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/app/services/assegnazione_service.py b/SMART/SMART-DSS-MICROSERVICES/app/services/assegnazione_service.py
+index 4733e82..623f4ec 100644
+--- a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/app/services/assegnazione_service.py
++++ b/SMART/SMART-DSS-MICROSERVICES/app/services/assegnazione_service.py
+@@ -12,10 +12,21 @@ def crea_assegnazione(data: dict):
+         virtuale_val = inp.virtuale if getattr(inp, "virtuale", None) is not None else False
+         cur.execute("""
+             INSERT INTO assegnazione (piano_id, percorso_id, stato_esecuzione, virtuale) VALUES (%s, %s, %s, %s) RETURNING id;
+         """, (inp.piano_id, inp.percorso_id, inp.stato_esecuzione.value, virtuale_val))
+         assegnazione_id = cur.fetchone()[0]
++
++        cur.execute(
++            """
++            UPDATE piano_operativo
++            SET stato = 'PRONTO'
++            WHERE id = %s
++              AND stato IN ('CREATO', 'IN_OTTIMIZZAZIONE');
++            """,
++            (inp.piano_id,),
++        )
++
+         conn.commit()
+         
+         # Retrieve vascello_id from percorso
+         cur.execute("""
+             SELECT a.id, a.piano_id, p.vascello_id, a.percorso_id, a.stato_esecuzione, a.virtuale, p.id_corsa, a.orario_completamento
+@@ -103,10 +114,21 @@ def crea_assegnazioni_bulk(data: CreaAssegnazioniBulkInput):
+             risultati.append({
+                 "assegnazione_id": str(assegnazione_id),
+                 "percorso_id": item.percorso_id,
+                 "virtuale": item.virtuale
+             })
++
++        if risultati:
++            cur.execute(
++                """
++                UPDATE piano_operativo
++                SET stato = 'PRONTO'
++                WHERE id = %s
++                  AND stato IN ('CREATO', 'IN_OTTIMIZZAZIONE');
++                """,
++                (data.piano_id,),
++            )
+         
+         conn.commit()
+         
+         return {
+             "piano_id": data.piano_id,
+
+===== app/services/ottimizzatore_service.py =====
+
+diff --git a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/app/services/ottimizzatore_service.py b/SMART/SMART-DSS-MICROSERVICES/app/services/ottimizzatore_service.py
+index 633601c..180d765 100644
+--- a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/app/services/ottimizzatore_service.py
++++ b/SMART/SMART-DSS-MICROSERVICES/app/services/ottimizzatore_service.py
+@@ -1,90 +1,147 @@
+ import requests
+ import json
+ from datetime import datetime, timedelta
+ from app.core.database import get_connection
+-from app.core.config import OPT_URL, SERVICE_CONFIG
++from app.core.config import OPT_URL, OPERATIVO_SERVICE_URL, ANAGRAFICA_SERVICE_URL, PERCORSI_SERVICE_URL, SERVICE_CONFIG
+ from app.models.common import OttimizzatoreInput, OttimizzatoreBatchInput, RiposizionamentoInput
+ from fastapi import HTTPException
+ import psycopg2
+ from typing import List
+ 
+ 
++def _parse_iso_datetime(value: str | None):
++    if not value:
++        return None
++    normalized = value.replace("Z", "+00:00")
++    return datetime.fromisoformat(normalized)
++
++
++def _is_within_cache_window(created_at: str | None, cache_delta: timedelta) -> bool:
++    dt = _parse_iso_datetime(created_at)
++    if dt is None:
++        return False
++    now = datetime.now(dt.tzinfo) if dt.tzinfo else datetime.now()
++    return dt >= (now - cache_delta)
++
++
++def _get_json(base_url: str, path: str, timeout: float = 10.0):
++    url = f"{base_url.rstrip('/')}{path}"
++    try:
++        response = requests.get(url, timeout=timeout)
++    except requests.RequestException as exc:
++        raise HTTPException(503, f"Servizio interno non raggiungibile: {base_url}") from exc
++
++    if response.status_code == 404:
++        return None
++    if response.status_code >= 400:
++        raise HTTPException(503, f"Errore servizio interno ({base_url}): HTTP {response.status_code}")
++
++    try:
++        return response.json()
++    except Exception as exc:
++        raise HTTPException(502, f"Risposta non valida dal servizio interno: {base_url}") from exc
++
++
++def _post_json(base_url: str, path: str, payload, timeout: float = 30.0):
++    url = f"{base_url.rstrip('/')}{path}"
++    try:
++        response = requests.post(url, json=payload, timeout=timeout)
++    except requests.RequestException as exc:
++        raise HTTPException(503, f"Servizio interno non raggiungibile: {base_url}") from exc
++
++    if response.status_code >= 400:
++        detail = f"HTTP {response.status_code}"
++        try:
++            body = response.json()
++            if isinstance(body, dict) and "detail" in body:
++                detail = body["detail"]
++        except Exception:
++            pass
++        raise HTTPException(response.status_code, f"Errore servizio interno ({base_url}): {detail}")
++
++    try:
++        return response.json() if response.content else None
++    except Exception as exc:
++        raise HTTPException(502, f"Risposta non valida dal servizio interno: {base_url}") from exc
++
++
+ def ottimizzatore(data: OttimizzatoreBatchInput):
+     """
+     Calcola il weather routing per una lista di coppie corsa/vascello.
+     Costruisce i payload dal DB e fa un'unica chiamata al servizio esterno.
+     """
+     items = data.items if isinstance(data, OttimizzatoreBatchInput) else [OttimizzatoreInput(**d) for d in data]
+     
+-    conn = get_connection()
+-    cur = conn.cursor()
+-    
+     results = []
+     payloads_to_compute = []  # lista di (inp, payload, corsa_data)
+     
+     try:
+-        CACHE_DELTA = timedelta(minutes=SERVICE_CONFIG.cache_delta_minutes)
+-        
+-        # Prima fase: raccolta dati e verifica cache per ogni item
++        cache_delta = timedelta(minutes=SERVICE_CONFIG.cache_delta_minutes)
++        # Prima fase: raccolta dati da microservizi per ogni item
+         for inp in items:
+-            # Verifica cache
+-            cur.execute("""
+-                SELECT id, id_corsa, tempo_percorrenza_min, consumo, created_at 
+-                FROM percorso 
+-                WHERE id_corsa = %s AND vascello_id = %s AND created_at >= now() - interval %s 
+-                ORDER BY created_at DESC;
+-            """, (inp.corsa_id, inp.vascello_id, CACHE_DELTA))
+-            cached_rows = cur.fetchall()
+-            
+-            if cached_rows:
+-                results.append({
+-                    "status": "cached",
+-                    "corsa_id": inp.corsa_id,
+-                    "vascello_id": inp.vascello_id,
+-                    "percorsi_inseriti": [str(r[0]) for r in cached_rows]
+-                })
+-                continue
+-            
+-            # Recupera dati corsa
+-            cur.execute("""
+-                SELECT c.id, c.orario_partenza_schedulato, c.orario_arrivo_max, 
+-                       t.porto_partenza_id, t.porto_arrivo_id 
+-                FROM corsa c 
+-                JOIN tratta t ON t.id = c.tratta_id 
+-                WHERE c.id = %s
+-            """, (inp.corsa_id,))
+-            row = cur.fetchone()
+-            if row is None:
++            cached = _get_json(
++                PERCORSI_SERVICE_URL,
++                f"/internal/percorso/by_corsa/{inp.corsa_id}?order_by=created_at&mode=DESC&limit=200&vascello_id={inp.vascello_id}",
++                timeout=10.0,
++            )
++            if isinstance(cached, dict):
++                cached_percorsi = cached.get("percorsi", [])
++                recent_ids = [
++                    str(p.get("id"))
++                    for p in cached_percorsi
++                    if p.get("id") and _is_within_cache_window(p.get("created_at"), cache_delta)
++                ]
++                if recent_ids:
++                    results.append(
++                        {
++                            "status": "cached",
++                            "corsa_id": inp.corsa_id,
++                            "vascello_id": inp.vascello_id,
++                            "percorsi_inseriti": recent_ids,
++                        }
++                    )
++                    continue
++
++            corsa = _get_json(OPERATIVO_SERVICE_URL, f"/internal/corsa/id/{inp.corsa_id}")
++            if corsa is None:
+                 raise HTTPException(404, f"Corsa {inp.corsa_id} non trovata")
+-            corsa_id, orario_partenza_schedulato, orario_arrivo_max, porto_partenza_id, porto_arrivo_id = row
+-            
+-            # Recupera coordinate porto partenza
+-            cur.execute("SELECT ST_Y(coordinate_gps), ST_X(coordinate_gps) FROM porto WHERE id = %s", (porto_partenza_id,))
+-            rp = cur.fetchone()
+-            if rp is None:
++
++            tratta_id = corsa.get("tratta_id")
++            tratta = _get_json(ANAGRAFICA_SERVICE_URL, f"/internal/tratta/{tratta_id}") if tratta_id else None
++            if tratta is None:
++                raise HTTPException(404, f"Tratta {tratta_id} non trovata per corsa {inp.corsa_id}")
++
++            porto_partenza_id = tratta.get("porto_partenza_id")
++            porto_arrivo_id = tratta.get("porto_arrivo_id")
++            porto_partenza = _get_json(ANAGRAFICA_SERVICE_URL, f"/internal/porto/{porto_partenza_id}") if porto_partenza_id else None
++            porto_arrivo = _get_json(ANAGRAFICA_SERVICE_URL, f"/internal/porto/{porto_arrivo_id}") if porto_arrivo_id else None
++            if porto_partenza is None:
+                 raise HTTPException(404, f"Porto partenza {porto_partenza_id} non trovato")
+-            lat_start, lon_start = rp
+-            
+-            # Recupera coordinate porto arrivo
+-            cur.execute("SELECT ST_Y(coordinate_gps), ST_X(coordinate_gps) FROM porto WHERE id = %s", (porto_arrivo_id,))
+-            ra = cur.fetchone()
+-            if ra is None:
++            if porto_arrivo is None:
+                 raise HTTPException(404, f"Porto arrivo {porto_arrivo_id} non trovato")
+-            lat_end, lon_end = ra
+-            
+-            # Recupera dati vascello
+-            cur.execute("SELECT id, nome, velocita_max_nodi, lunghezza_m FROM vascello WHERE id = %s", (inp.vascello_id,))
+-            rv = cur.fetchone()
+-            if rv is None:
++
++            lat_start = porto_partenza.get("lat")
++            lon_start = porto_partenza.get("lon")
++            lat_end = porto_arrivo.get("lat")
++            lon_end = porto_arrivo.get("lon")
++
++            vascello = _get_json(ANAGRAFICA_SERVICE_URL, f"/internal/vascello/{inp.vascello_id}")
++            if vascello is None:
+                 raise HTTPException(404, f"Vascello {inp.vascello_id} non trovato")
+-            vascello_id_db, vascello_nome, vmax_knots_db, lunghezza_m = rv
+-            vascello_id = str(vascello_id_db)
+-            vmax_knots = float(vmax_knots_db) if vmax_knots_db is not None else None
+-            length_m = float(lunghezza_m) if lunghezza_m is not None else 30.0
++            vascello_id = str(vascello.get("id"))
++            vascello_nome = vascello.get("nome")
++            vmax_knots = float(vascello.get("velocita_max_nodi")) if vascello.get("velocita_max_nodi") is not None else None
++            length_m = 30.0
+             
+             # Calcola time_max
++            orario_partenza_schedulato = _parse_iso_datetime(corsa.get("orario_partenza_schedulato"))
++            if orario_partenza_schedulato is None:
++                raise HTTPException(400, f"orario_partenza_schedulato mancante/non valido per corsa {inp.corsa_id}")
++
++            orario_arrivo_max = _parse_iso_datetime(corsa.get("orario_arrivo_max"))
++
+             start_time_utc = orario_partenza_schedulato.isoformat()
+             if orario_arrivo_max is not None:
+                 delta = orario_arrivo_max - orario_partenza_schedulato
+                 time_max_seconds = int(delta.total_seconds())
+                 if time_max_seconds <= 0:
+@@ -121,29 +178,27 @@ def ottimizzatore(data: OttimizzatoreBatchInput):
+                 "orario_partenza_schedulato": orario_partenza_schedulato,
+                 "orario_arrivo_max": orario_arrivo_max
+             }
+             payloads_to_compute.append((inp, payload, corsa_data))
+         
+-        # Se non ci sono payload da calcolare, ritorna solo i risultati dalla cache
++        # Se non ci sono payload da calcolare, ritorna i risultati correnti
+         if not payloads_to_compute:
+-            conn.close()
+             return {"results": results}
+         
+         # Seconda fase: chiamata unica al servizio esterno con lista di payload
+         all_payloads = [p[1] for p in payloads_to_compute]
+         
+         r = requests.post(OPT_URL, json=all_payloads, timeout=600)
+         if r.status_code != 200:
+-            conn.close()
+             raise HTTPException(500, f"Optimizer error: {r.text}")
+         
+         resp_list = r.json()
+         if not isinstance(resp_list, list):
+             # Se la risposta ├¿ un singolo oggetto, wrappalo in lista
+             resp_list = [resp_list]
+         
+-        # Terza fase: elaborazione risposte e inserimento nel DB
++        # Terza fase: elaborazione risposte e inserimento via microservizio percorsi
+         for idx, (inp, payload, corsa_data) in enumerate(payloads_to_compute):
+             if idx >= len(resp_list):
+                 results.append({
+                     "status": "error",
+                     "corsa_id": corsa_data["corsa_id"],
+@@ -163,12 +218,12 @@ def ottimizzatore(data: OttimizzatoreBatchInput):
+                 })
+                 continue
+             
+             percorsi = resp["percorsi"]
+             tempo_riposizionamento_min = float(resp.get("tempo_riposizionamento", 0.0)) if resp.get("tempo_riposizionamento") is not None else 0.0
+-            
+-            inserted_ids = []
++
++            insert_items = []
+             for p in percorsi:
+                 required_keys = ["tempo_percorrenza", "geom_rotta", "pref", "vref", "consumo_pieno_carico", "consumo_vuoto", "distanza_nm", "comfort"]
+                 if not all(k in p for k in required_keys):
+                     continue
+                 
+@@ -180,60 +235,43 @@ def ottimizzatore(data: OttimizzatoreBatchInput):
+                         continue
+                 
+                 consumo = float(p["consumo_pieno_carico"]) if p.get("consumo_pieno_carico") is not None else float(p.get("consumo", 0))
+                 consumo_riposizionamento = float(p.get("consumo_vuoto", 0))
+                 geojson = {"type": "LineString", "coordinates": [[c[1], c[0]] for c in p["geom_rotta"]]}
+-                
+-                cur.execute("""
+-                    INSERT INTO percorso (
+-                        id_corsa, pref, vref,
+-                        tempo_percorrenza_min, tempo_riposizionamento_min,
+-                        consumo, geom_rotta, vascello_id,
+-                        consumo_riposizionamento, distanza_nm, comfort
+-                    )
+-                    VALUES (
+-                        %s, %s::jsonb, %s::jsonb,
+-                        (%s * interval '1 minute'),
+-                        (%s * interval '1 minute'),
+-                        %s,
+-                        ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326),
+-                        %s, %s, %s, %s
+-                    )
+-                    RETURNING id;
+-                """, (
+-                    corsa_data["corsa_id"],
+-                    json.dumps(p["pref"]),
+-                    json.dumps(p["vref"]),
+-                    tempo_percorrenza_min,
+-                    tempo_riposizionamento_min,
+-                    consumo,
+-                    json.dumps(geojson),
+-                    corsa_data["vascello_id"],
+-                    consumo_riposizionamento,
+-                    float(p.get("distanza_nm", 0)),
+-                    float(p.get("comfort", 0))
+-                ))
+-                inserted_ids.append(str(cur.fetchone()[0]))
++
++                insert_items.append({
++                    "id_corsa": corsa_data["corsa_id"],
++                    "vascello_id": corsa_data["vascello_id"],
++                    "pref": p["pref"],
++                    "vref": p["vref"],
++                    "tempo_percorrenza_min": tempo_percorrenza_min,
++                    "tempo_riposizionamento_min": tempo_riposizionamento_min,
++                    "consumo": consumo,
++                    "geom_rotta": geojson,
++                    "consumo_riposizionamento": consumo_riposizionamento,
++                    "distanza_nm": float(p.get("distanza_nm", 0)),
++                    "comfort": float(p.get("comfort", 0)),
++                })
++
++            inserted_ids = []
++            if insert_items:
++                insert_resp = _post_json(PERCORSI_SERVICE_URL, "/internal/percorso/crea_batch", {"items": insert_items}, timeout=40.0)
++                if isinstance(insert_resp, dict) and isinstance(insert_resp.get("percorsi_inseriti"), list):
++                    inserted_ids = [str(x) for x in insert_resp.get("percorsi_inseriti", [])]
+             
+             results.append({
+                 "status": "computed",
+                 "corsa_id": corsa_data["corsa_id"],
+                 "vascello_id": corsa_data["vascello_id"],
+                 "percorsi_inseriti": inserted_ids
+             })
+         
+-        conn.commit()
+-        conn.close()
+         return {"results": results}
+     
+     except HTTPException:
+-        conn.rollback()
+-        conn.close()
+         raise
+     except Exception as e:
+-        conn.rollback()
+-        conn.close()
+         raise HTTPException(500, f"Errore interno: {str(e)}")
+ 
+ 
+ def stima_riposizionamento(data):
+     """
+
+===== app/services/pianificazione_service.py =====
+
+diff --git a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/app/services/pianificazione_service.py b/SMART/SMART-DSS-MICROSERVICES/app/services/pianificazione_service.py
+index eca663c..039f6eb 100644
+--- a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/app/services/pianificazione_service.py
++++ b/SMART/SMART-DSS-MICROSERVICES/app/services/pianificazione_service.py
+@@ -1,14 +1,16 @@
+ from app.core.database import get_connection
+ from app.models.common import AssignmentRequest
+ from app.models.corsa import PrevisioneRequest
+ from app.services import previsione_service, ottimizzatore_service
+ from app.models.piano import PianoCreateInput, PianoUpdateInput, PianoDeleteInput
++from app.core.config import PERCORSI_SERVICE_URL
+ from datetime import datetime, timedelta, date
+ from fastapi import HTTPException
+ import psycopg2
+ import json
++import requests
+ 
+ def compute_assignments(data: dict):
+     inp = AssignmentRequest(**data) if not isinstance(data, AssignmentRequest) else data
+     conn = get_connection(); cur = conn.cursor()
+     try:
+@@ -230,101 +232,151 @@ def lista_piani(data_riferimento: date = None):
+         cur.close(); conn.close()
+ 
+ 
+ def get_percorsi_compatibili(corsa_id: str, percorsi_id: list):
+     """Restituisce i percorsi della corsa compatibili con tutti i percorsi gi├á assegnati."""
+-    conn = get_connection(); cur = conn.cursor()
+-    try:
+-        # Recupera tutti i percorsi della corsa di riferimento
+-        cur.execute("""
+-            SELECT 
+-                p.id, p.tempo_percorrenza_min, p.consumo, p.comfort, p.vascello_id,
+-                v.nome as vascello_nome,
+-                c.orario_partenza_schedulato
+-            FROM percorso p
+-            JOIN corsa c ON p.id_corsa = c.id
+-            LEFT JOIN vascello v ON p.vascello_id = v.id
+-            WHERE p.id_corsa = %s;
+-        """, (corsa_id,))
+-        percorsi_corsa = cur.fetchall()
+-        
+-        if not percorsi_corsa:
+-            raise HTTPException(status_code=404, detail=f"Nessun percorso trovato per la corsa {corsa_id}")
+-        
+-        def build_percorso_response(row):
+-            orario_partenza = row[6]
+-            tempo_percorrenza = row[1]
+-            orario_arrivo_calcolato = (orario_partenza + tempo_percorrenza) if (orario_partenza and tempo_percorrenza) else None
+-            return {
+-                "percorso_id": str(row[0]),
+-                "tempo_percorrenza_min": float(row[1].total_seconds() / 60) if row[1] else None,
+-                "consumo": row[2],
+-                "comfort": row[3],
+-                "vascello_id": str(row[4]) if row[4] else None,
+-                "vascello_nome": row[5],
+-                "orario_partenza_schedulato": orario_partenza.isoformat() if orario_partenza else None,
+-                "orario_arrivo_calcolato": orario_arrivo_calcolato.isoformat() if orario_arrivo_calcolato else None
+-            }
+-        
+-        # Se non ci sono percorsi gi├á assegnati, tutti i percorsi della corsa sono compatibili
+-        if not percorsi_id:
+-            return {
+-                "corsa_id": corsa_id,
+-                "percorsi_compatibili": [build_percorso_response(pc) for pc in percorsi_corsa]
++    def _get_json(path: str, timeout: float = 8.0):
++        url = f"{PERCORSI_SERVICE_URL.rstrip('/')}{path}"
++        try:
++            response = requests.get(url, timeout=timeout)
++        except requests.RequestException as exc:
++            raise HTTPException(status_code=503, detail="Percorsi service non raggiungibile") from exc
++
++        if response.status_code == 404:
++            return None
++        if response.status_code >= 400:
++            raise HTTPException(status_code=503, detail=f"Errore Percorsi service: HTTP {response.status_code}")
++
++        try:
++            return response.json()
++        except Exception as exc:
++            raise HTTPException(status_code=502, detail="Risposta non valida dal Percorsi service") from exc
++
++    def _parse_iso_datetime(value: str | None):
++        if not value:
++            return None
++        normalized = value.replace("Z", "+00:00")
++        try:
++            return datetime.fromisoformat(normalized)
++        except Exception:
++            return None
++
++    def _build_percorso_response(item: dict):
++        percorso_id = item.get("id") or item.get("percorso_id")
++        vascello_id = item.get("vascello_id")
++        orario_partenza = _parse_iso_datetime(item.get("orario_partenza_schedulato"))
++        orario_arrivo = _parse_iso_datetime(item.get("orario_arrivo_previsto"))
++
++        tempo_percorrenza_min = item.get("tempo_percorrenza")
++        if tempo_percorrenza_min is None:
++            tempo_percorrenza_min = item.get("tempo_percorrenza_min")
++
++        return {
++            "percorso_id": str(percorso_id),
++            "tempo_percorrenza_min": float(tempo_percorrenza_min) if tempo_percorrenza_min is not None else None,
++            "consumo": item.get("consumo"),
++            "comfort": item.get("comfort"),
++            "vascello_id": str(vascello_id) if vascello_id else None,
++            "vascello_nome": item.get("vascello_nome"),
++            "orario_partenza_schedulato": orario_partenza.isoformat() if orario_partenza else None,
++            "orario_arrivo_calcolato": orario_arrivo.isoformat() if orario_arrivo else None,
++        }
++
++    percorsi_id_set = {str(pid) for pid in (percorsi_id or [])}
++
++    percorsi_target_resp = _get_json(
++        f"/internal/percorso/by_corsa/{corsa_id}?order_by=created_at&mode=DESC&limit=500"
++    )
++    if not isinstance(percorsi_target_resp, dict):
++        raise HTTPException(status_code=404, detail=f"Nessun percorso trovato per la corsa {corsa_id}")
++
++    percorsi_corsa = percorsi_target_resp.get("percorsi", [])
++    if not isinstance(percorsi_corsa, list) or not percorsi_corsa:
++        raise HTTPException(status_code=404, detail=f"Nessun percorso trovato per la corsa {corsa_id}")
++
++    if not percorsi_id_set:
++        return {
++            "corsa_id": corsa_id,
++            "percorsi_compatibili": [_build_percorso_response(pc) for pc in percorsi_corsa],
++        }
++
++    percorsi_assegnati_list = []
++    percorsi_mancanti = []
++
++    for percorso_id in sorted(percorsi_id_set):
++        pa = _get_json(f"/internal/percorso/{percorso_id}?include=corsa")
++        if not isinstance(pa, dict):
++            percorsi_mancanti.append(percorso_id)
++            continue
++
++        corsa_obj = pa.get("corsa") if isinstance(pa.get("corsa"), dict) else {}
++        pa_start = _parse_iso_datetime(corsa_obj.get("orario_partenza_schedulato") or pa.get("orario_partenza_schedulato"))
++        pa_end = _parse_iso_datetime(pa.get("orario_arrivo_previsto"))
++        if pa_end is None and pa_start is not None and pa.get("tempo_percorrenza") is not None:
++            try:
++                pa_end = pa_start + timedelta(minutes=float(pa.get("tempo_percorrenza")))
++            except Exception:
++                pa_end = None
++
++        percorsi_assegnati_list.append(
++            {
++                "id": str(pa.get("percorso_id") or pa.get("id") or percorso_id),
++                "vascello_id": str(pa.get("vascello_id")) if pa.get("vascello_id") else None,
++                "orario_partenza": pa_start,
++                "orario_arrivo_calcolato": pa_end,
++                "corsa_id": str(pa.get("corsa_id")) if pa.get("corsa_id") else None,
+             }
+-        
+-        # Recupera i dettagli dei percorsi gi├á assegnati dall'utente
+-        placeholders = ','.join(['%s'] * len(percorsi_id))
+-        cur.execute(f"""
+-            SELECT p.id, p.vascello_id, c.orario_partenza_schedulato, p.tempo_percorrenza_min, p.id_corsa
+-            FROM percorso p
+-            JOIN corsa c ON p.id_corsa = c.id
+-            WHERE p.id IN ({placeholders});
+-        """, tuple(percorsi_id))
+-        percorsi_assegnati = cur.fetchall()
+-        
+-        percorsi_assegnati_list = [{
+-            "id": str(p[0]),
+-            "vascello_id": str(p[1]) if p[1] else None,
+-            "orario_partenza": p[2],
+-            "orario_arrivo_calcolato": (p[2] + p[3]) if (p[2] and p[3]) else None,
+-            "corsa_id": str(p[4])
+-        } for p in percorsi_assegnati]
+-        
+-        percorsi_compatibili = []
+-        
+-        for pc in percorsi_corsa:
+-            pc_vascello_id = str(pc[4]) if pc[4] else None
+-            pc_orario_partenza = pc[6]
+-            pc_tempo_percorrenza = pc[1]
+-            pc_orario_arrivo_calcolato = (pc_orario_partenza + pc_tempo_percorrenza) if (pc_orario_partenza and pc_tempo_percorrenza) else None
+-            
+-            # Verifica compatibilit├á con TUTTI i percorsi assegnati
+-            compatibile_con_tutti = True
+-            
+-            for pa in percorsi_assegnati_list:
+-                # Vascelli diversi: sempre compatibili
+-                if pc_vascello_id != pa["vascello_id"]:
+-                    continue
+-                
+-                # Stesso vascello: verifica vincoli temporali
+-                pa_finisce_prima = pa["orario_arrivo_calcolato"] and pc_orario_partenza and pa["orario_arrivo_calcolato"] < pc_orario_partenza
+-                pc_finisce_prima = pc_orario_arrivo_calcolato and pa["orario_partenza"] and pc_orario_arrivo_calcolato < pa["orario_partenza"]
+-                
+-                if not (pa_finisce_prima or pc_finisce_prima):
+-                    compatibile_con_tutti = False
+-                    break
+-            
+-            if compatibile_con_tutti:
+-                percorsi_compatibili.append(build_percorso_response(pc))
+-        
++        )
++
++    if percorsi_mancanti:
++        raise HTTPException(
++            status_code=404,
++            detail=f"Percorsi assegnati non trovati: {', '.join(percorsi_mancanti)}",
++        )
++
++    corse_gia_assegnate = {p["corsa_id"] for p in percorsi_assegnati_list if p.get("corsa_id")}
++    if corsa_id in corse_gia_assegnate:
+         return {
+             "corsa_id": corsa_id,
+-            "percorsi_compatibili": percorsi_compatibili
++            "percorsi_compatibili": [],
+         }
+-    finally:
+-        cur.close(); conn.close()
++
++    percorsi_compatibili = []
++
++    for pc in percorsi_corsa:
++        pc_id = str(pc.get("id") or pc.get("percorso_id"))
++        if pc_id in percorsi_id_set:
++            continue
++
++        pc_vascello_id = str(pc.get("vascello_id")) if pc.get("vascello_id") else None
++        pc_orario_partenza = _parse_iso_datetime(pc.get("orario_partenza_schedulato"))
++        pc_orario_arrivo_calcolato = _parse_iso_datetime(pc.get("orario_arrivo_previsto"))
++        if pc_orario_arrivo_calcolato is None and pc_orario_partenza is not None and pc.get("tempo_percorrenza") is not None:
++            try:
++                pc_orario_arrivo_calcolato = pc_orario_partenza + timedelta(minutes=float(pc.get("tempo_percorrenza")))
++            except Exception:
++                pc_orario_arrivo_calcolato = None
++
++        compatibile_con_tutti = True
++        for pa in percorsi_assegnati_list:
++            if pc_vascello_id != pa["vascello_id"]:
++                continue
++
++            pa_finisce_prima = pa["orario_arrivo_calcolato"] and pc_orario_partenza and pa["orario_arrivo_calcolato"] < pc_orario_partenza
++            pc_finisce_prima = pc_orario_arrivo_calcolato and pa["orario_partenza"] and pc_orario_arrivo_calcolato < pa["orario_partenza"]
++
++            if not (pa_finisce_prima or pc_finisce_prima):
++                compatibile_con_tutti = False
++                break
++
++        if compatibile_con_tutti:
++            percorsi_compatibili.append(_build_percorso_response(pc))
++
++    return {
++        "corsa_id": corsa_id,
++        "percorsi_compatibili": percorsi_compatibili,
++    }
+ 
+ 
+ def check_validita_percorsi(percorso_1_id: str, percorso_2_id: str):
+     conn = get_connection(); cur = conn.cursor()
+     try:
+
+===== app/services/replanning_service.py =====
+
+diff --git a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/app/services/replanning_service.py b/SMART/SMART-DSS-MICROSERVICES/app/services/replanning_service.py
+index 40cec72..b99b84c 100644
+--- a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/app/services/replanning_service.py
++++ b/SMART/SMART-DSS-MICROSERVICES/app/services/replanning_service.py
+@@ -4,43 +4,30 @@ Recupera i dati dal DB e li invia al servizio esterno di replanning.
+ """
+ import httpx
+ from datetime import date
+ from typing import Dict, List, Any, Optional, Literal
+ from collections import defaultdict
+-import os
+-import glob
+-import json
+ from pydantic import BaseModel, Field, ConfigDict, ValidationError
+ from fastapi.encoders import jsonable_encoder
+ 
+-from app.core.config import REPLANNING_SERVICE_URL, KAFKA_CONFIG
++from app.core.config import REPLANNING_SERVICE_URL
+ from app.core.database import get_connection
+ from app.services import pianificazione_service, assegnazione_service, corsa_service
+ 
+ 
+ class PianoInput(BaseModel):
+     model_config = ConfigDict(extra="forbid")
+ 
+     id: str = Field(..., min_length=1)
+     data_riferimento: date
+-    stato: Literal["CREATO", "IN_OTTIMIZZAZIONE", "PRONTO", "ATTIVO"]
++    stato: Literal["ATTIVO", "PIANIFICATO", "COMPLETATO"]
+     descrizione: str = Field(..., min_length=1)
+ 
+ 
+ def _build_piano_payload(piano: Dict[str, Any]) -> Dict[str, Any]:
+     stato_raw = str(piano.get("stato", "")).upper()
+-    # Mappa stati interni a quelli accettati dal servizio esterno
+-    stato_map = {
+-        "IN_CORSO": "ATTIVO",
+-        "ATTIVO": "ATTIVO",
+-        "IN_OTTIMIZZAZIONE": "IN_OTTIMIZZAZIONE",
+-        "PRONTO": "PRONTO",
+-        "CREATO": "CREATO",
+-        "PIANIFICATO": "PRONTO",
+-        "COMPLETATO": "ATTIVO"
+-    }
+-    stato = stato_map.get(stato_raw, "ATTIVO")
++    stato = "ATTIVO" if stato_raw == "ATTIVO" else stato_raw
+ 
+     try:
+         piano_model = PianoInput(
+             id=str(piano.get("id", "")),
+             data_riferimento=piano.get("data_riferimento"),
+@@ -168,125 +155,10 @@ def organizza_assegnazioni_per_vascello(assegnazioni: List[Dict[str, Any]]) -> D
+         per_vascello[vascello_id].sort(key=lambda x: x.get("id", ""))
+     
+     return dict(per_vascello)
+ 
+ 
+-def _get_virtual_simulation_overrides(piano_id: str) -> Dict[str, str]:
+-    """Recupera mapping assegnazione->orario_simulazione dal file simulazioni schedulate."""
+-    data_dir = os.path.join(os.path.dirname(__file__), '..', 'data')
+-    file_path = os.path.join(data_dir, f'simulazioni_schedulate_{piano_id}.json')
+-
+-    if not os.path.exists(file_path):
+-        return {}
+-
+-    try:
+-        with open(file_path, 'r', encoding='utf-8') as f:
+-            data = json.load(f)
+-    except Exception:
+-        return {}
+-
+-    risultati = data.get("risultati", []) if isinstance(data, dict) else []
+-    orari_per_assegnazione: Dict[str, str] = {}
+-
+-    for item in risultati:
+-        if not isinstance(item, dict):
+-            continue
+-        assegnazione_id = item.get("assegnazione_id")
+-        orario_simulazione = item.get("orario_simulazione")
+-        if assegnazione_id and orario_simulazione:
+-            orari_per_assegnazione[str(assegnazione_id)] = str(orario_simulazione)
+-    return orari_per_assegnazione
+-
+-
+-def get_schedulated_piano_ids() -> List[str]:
+-    """Recupera i piano_id equivalenti a quelli esposti da /simulation/schedulate."""
+-    data_dir = os.path.join(os.path.dirname(__file__), '..', 'data')
+-    files = glob.glob(os.path.join(data_dir, "simulazioni_schedulate_*.json"))
+-
+-    if not files:
+-        return []
+-
+-    candidates: List[str] = []
+-    for file_path in files:
+-        try:
+-            with open(file_path, 'r', encoding='utf-8') as f:
+-                payload = json.load(f)
+-            piano_id = payload.get("piano_id") if isinstance(payload, dict) else None
+-            if piano_id:
+-                candidates.append(str(piano_id))
+-        except Exception:
+-            continue
+-
+-    if not candidates:
+-        return []
+-
+-    conn = get_connection()
+-    cur = conn.cursor()
+-    try:
+-        cur.execute(
+-            """
+-            SELECT DISTINCT a.piano_id::text
+-            FROM assegnazione a
+-            WHERE a.piano_id::text = ANY(%s)
+-              AND a.stato_esecuzione IN ('PIANIFICATA', 'IN_CORSO')
+-            """,
+-            (candidates,)
+-        )
+-        rows = cur.fetchall()
+-        return [row[0] for row in rows]
+-    finally:
+-        cur.close()
+-        conn.close()
+-
+-
+-def run_periodic_replanning_cycle() -> Dict[str, Any]:
+-    """
+-    Esegue un ciclo di check replanning periodico:
+-    1) tutti i piani restituiti da /simulation/schedulate con virtuale=true
+-    2) piano IN_CORSO della giornata con virtuale=false
+-    """
+-    piano_ids = get_schedulated_piano_ids()
+-    virtual_checks: List[Dict[str, Any]] = []
+-
+-    for pid in piano_ids:
+-        try:
+-            result = check_replanning(virtuale=True, piano_id=pid)
+-            virtual_checks.append({
+-                "piano_id": pid,
+-                "success": bool(result.get("success")),
+-                "message": result.get("message")
+-            })
+-        except Exception as exc:
+-            virtual_checks.append({
+-                "piano_id": pid,
+-                "success": False,
+-                "message": f"Errore check virtuale: {exc}"
+-            })
+-
+-    try:
+-        in_corso_check = check_replanning(virtuale=False, piano_id=None)
+-    except Exception as exc:
+-        in_corso_check = {
+-            "success": False,
+-            "message": f"Errore check piano IN_CORSO non virtuale: {exc}",
+-            "piano": None,
+-            "assegnazioni_per_vascello": {},
+-            "mmsi_per_vascello": {}
+-        }
+-
+-    return {
+-        "success": True,
+-        "virtual_checks_count": len(virtual_checks),
+-        "virtual_checks": virtual_checks,
+-        "in_corso_check": {
+-            "success": bool(in_corso_check.get("success")),
+-            "message": in_corso_check.get("message"),
+-            "piano_id": (in_corso_check.get("piano") or {}).get("id") if isinstance(in_corso_check, dict) else None
+-        }
+-    }
+-
+-
+ def chiama_servizio_replanning(
+     piano: Dict[str, Any], 
+     assegnazioni_per_vascello: Dict[str, List[Dict[str, Any]]],
+     mmsi_per_vascello: Dict[str, str]
+ ) -> Dict[str, Any]:
+@@ -299,44 +171,24 @@ def chiama_servizio_replanning(
+         mmsi_per_vascello: Dizionario {vascello_id: mmsi}.
+         
+     Returns:
+         Risposta del servizio di replanning.
+     """
+-    # Pulisci le assegnazioni rimuovendo campi non richiesti dal servizio esterno
+-    assegnazioni_pulite = {}
+-    for vascello_id, asm_list in assegnazioni_per_vascello.items():
+-        assegnazioni_pulite[vascello_id] = []
+-        for a in asm_list:
+-            # Mantieni solo i campi richiesti dal servizio esterno
+-            asm_clean = {
+-                "id": a.get("id"),
+-                "piano_id": a.get("piano_id"),
+-                "vascello_id": a.get("vascello_id"),
+-                "percorso_id": a.get("percorso_id"),
+-                "id_corsa": a.get("id_corsa"),
+-                "stato_esecuzione": a.get("stato_esecuzione"),
+-                "virtuale": a.get("virtuale", False),
+-                "orario_completamento": a.get("orario_completamento"),
+-                "percorso": a.get("percorso"),
+-                "corsa": a.get("corsa")
+-            }
+-            assegnazioni_pulite[vascello_id].append(asm_clean)
+-    
+     payload = {
+         "piano": _build_piano_payload(piano),
+-        "assegnazioni_per_vascello": assegnazioni_pulite,
++        "assegnazioni_per_vascello": assegnazioni_per_vascello,
+         "mmsi_per_vascello": mmsi_per_vascello
+     }
+     payload = jsonable_encoder(payload)
+     
+     try:
+         response = httpx.post(
+             f"{REPLANNING_SERVICE_URL}/replanning/check",
+             json=payload,
+             timeout=30.0
+         )
+-        print(f"Chiamata a servizio replanning con payload: {json.dumps(payload, indent=2, ensure_ascii=False)}")
++        #print(f"Chiamata a servizio replanning con payload: {payload}")
+         response.raise_for_status()
+         return response.json()
+     except httpx.RequestError as e:
+         return {
+             "success": False,
+@@ -348,11 +200,11 @@ def chiama_servizio_replanning(
+             "success": False,
+             "error": f"Errore HTTP dal servizio di replanning: {e.response.status_code}"
+         }
+ 
+ 
+-def check_replanning(virtuale: bool, piano_id: Optional[str] = None) -> Dict[str, Any]:
++def check_replanning() -> Dict[str, Any]:
+     """
+     Esegue il check replanning:
+     1. Recupera il piano IN_CORSO del giorno
+     2. Recupera le assegnazioni del piano
+     3. Organizza per vascello
+@@ -360,40 +212,26 @@ def check_replanning(virtuale: bool, piano_id: Optional[str] = None) -> Dict[str
+     5. Chiama il servizio esterno
+     
+     Returns:
+         Dizionario con i risultati dell'operazione.
+     """
+-    # Step 1: Se passato piano_id usa quel piano, altrimenti cerca il piano IN_CORSO di oggi
+-    piano = pianificazione_service.get_piano_by_id(piano_id) if piano_id else get_piano_in_corso_oggi()
++    # Step 1: Recupera il piano IN_CORSO di oggi
++    piano = get_piano_in_corso_oggi()
+     
+     if piano is None:
+-        message = f"Piano non trovato per id={piano_id}" if piano_id else "Nessun piano IN_CORSO trovato per oggi"
+         return jsonable_encoder({
+             "success": False,
+-            "message": message,
++            "message": "Nessun piano IN_CORSO trovato per oggi",
+             "piano": None,
+             "assegnazioni_per_vascello": {},
+             "mmsi_per_vascello": {}
+         })
+     
+     piano_id = piano.get("id")
+-    if not piano_id:
+-        return jsonable_encoder({
+-            "success": False,
+-            "message": "Piano di riferimento non valido: campo 'id' mancante",
+-            "piano": piano,
+-            "assegnazioni_per_vascello": {},
+-            "mmsi_per_vascello": {}
+-        })
+     
+-    # Step 2: Recupera tutte le assegnazioni del piano e filtra per virtuale
++    # Step 2: Recupera le assegnazioni del piano
+     assegnazioni = assegnazione_service.lista_assegnazioni_by_piano(piano_id)
+-    assegnazioni = [a for a in assegnazioni if bool(a.get("virtuale")) is virtuale]
+-    
+-    # Filtra solo assegnazioni con stati validi per il servizio esterno
+-    stati_validi = {"PIANIFICATA", "IN_CORSO", "COMPLETATA"}
+-    assegnazioni = [a for a in assegnazioni if a.get("stato_esecuzione") in stati_validi]
+     
+     # Step 3: Organizza per vascello
+     assegnazioni_per_vascello = organizza_assegnazioni_per_vascello(assegnazioni)
+ 
+     # Step 4: Recupera MMSI per ogni vascello
+@@ -419,46 +257,41 @@ def check_replanning(virtuale: bool, piano_id: Optional[str] = None) -> Dict[str
+         try:
+             corse_info[cid] = corsa_service.get_corsa(cid)
+         except Exception:
+             corse_info[cid] = None
+ 
+-    # Per virtuale=true, recupera override orario_simulazione da simulazioni schedulate
+-    # e sim_speed_factor dalla config Kafka runtime (stessa sorgente di get_kafka_settings)
+-    sim_orari_per_assegnazione: Dict[str, str] = {}
+-    sim_speed_factor = float(KAFKA_CONFIG.get("sim_speed_factor", 1.0) or 1.0)
+-    if sim_speed_factor <= 0:
+-        sim_speed_factor = 1.0
+-    if virtuale:
+-        sim_orari_per_assegnazione = _get_virtual_simulation_overrides(str(piano_id))
+-
+     # arricchisci gli oggetti assegnazione con 'percorso' e 'corsa'
+     for v_id, asm_list in assegnazioni_per_vascello.items():
+         for a in asm_list:
+             pid = a.get("percorso_id")
+             cid = a.get("id_corsa")
+             a["percorso"] = percorsi_info.get(pid)
+             a["corsa"] = corse_info.get(cid)
+ 
+-            if virtuale:
+-                assegnazione_id = str(a.get("id")) if a.get("id") else None
+-                orario_simulazione = sim_orari_per_assegnazione.get(assegnazione_id) if assegnazione_id else None
+-
+-                # override orario_partenza_schedulato della corsa con orario_simulazione
+-                if orario_simulazione and isinstance(a.get("corsa"), dict):
+-                    a["corsa"]["orario_partenza_schedulato"] = orario_simulazione
+-
+-                # scala tempo_percorrenza_min / sim_speed_factor
+-                percorso = a.get("percorso")
+-                if isinstance(percorso, dict) and percorso.get("tempo_percorrenza_min") is not None and sim_speed_factor > 0:
+-                    percorso["tempo_percorrenza_min"] = float(percorso["tempo_percorrenza_min"]) / sim_speed_factor
+-
+     # Step 6: Chiama il servizio esterno
+     risposta_replanning = chiama_servizio_replanning(piano, assegnazioni_per_vascello, mmsi_per_vascello)
+ 
+     return jsonable_encoder({
+         "success": True,
+-        "message": f"Piano di riferimento elaborato con {len(assegnazioni)} assegnazioni (virtuale={virtuale}) su {len(assegnazioni_per_vascello)} vascelli",
++        "message": f"Piano IN_CORSO trovato con {len(assegnazioni)} assegnazioni su {len(assegnazioni_per_vascello)} vascelli",
+         "piano": piano,
+         "assegnazioni_per_vascello": assegnazioni_per_vascello,
+         "mmsi_per_vascello": mmsi_per_vascello,
+         "risposta_replanning": risposta_replanning
+     })
++
++
++def run_periodic_replanning_cycle() -> Dict[str, Any]:
++    """Esegue un ciclo periodico di check replanning sul piano operativo corrente."""
++    result = check_replanning()
++    if isinstance(result, dict):
++        return {
++            "success": bool(result.get("success")),
++            "message": result.get("message"),
++            "piano_id": (result.get("piano") or {}).get("id") if result.get("piano") else None,
++        }
++
++    return {
++        "success": False,
++        "message": "Risposta check_replanning non valida",
++        "piano_id": None,
++    }
+
+===== app/services/simulatore_service.py =====
+
+diff --git a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/app/services/simulatore_service.py b/SMART/SMART-DSS-MICROSERVICES/app/services/simulatore_service.py
+index ccdfddf..05a09b2 100644
+--- a/SMART/SMART_DSS_MONOLIT/SMART-DSS-NEW/app/services/simulatore_service.py
++++ b/SMART/SMART-DSS-MICROSERVICES/app/services/simulatore_service.py
+@@ -1,19 +1,34 @@
+ import json
+ import requests
+ import math
+ from requests.adapters import HTTPAdapter
+ from urllib3.util.retry import Retry
+-from app.core.config import SIMULATION_URL, KAFKA_CONFIG
+-from app.core.database import get_connection
++from app.core.config import SIMULATION_URL, KAFKA_CONFIG, OPERATIVO_SERVICE_URL, PERCORSI_SERVICE_URL, ANAGRAFICA_SERVICE_URL
+ from fastapi import HTTPException
+-from datetime import timedelta
++from datetime import datetime, timedelta
+ from app.models.common import SimulationBuildInput
+ 
++
++def _get_json(base_url: str, path: str, timeout: float = 10.0):
++    url = f"{base_url.rstrip('/')}{path}"
++    try:
++        response = requests.get(url, timeout=timeout)
++    except requests.RequestException as exc:
++        raise HTTPException(status_code=503, detail=f"Servizio interno non raggiungibile: {base_url}") from exc
++
++    if response.status_code == 404:
++        return None
++    if response.status_code >= 400:
++        raise HTTPException(status_code=503, detail=f"Errore servizio interno ({base_url}): HTTP {response.status_code}")
++
++    try:
++        return response.json()
++    except Exception as exc:
++        raise HTTPException(status_code=502, detail=f"Risposta non valida dal servizio interno: {base_url}") from exc
++
+ def build_and_run_simulation(data: SimulationBuildInput):
+-    conn = get_connection()
+-    cur = conn.cursor()
+     vessels_out = []
+     vessels_resolved = []
+     
+     # Risolvi sim_speed_factor: usa config se non fornito, altrimenti aggiorna config
+     if data.sim_speed_factor is not None:
+@@ -22,67 +37,61 @@ def build_and_run_simulation(data: SimulationBuildInput):
+     else:
+         effective_sim_speed_factor = KAFKA_CONFIG["sim_speed_factor"]
+ 
+     try:
+         for el in data.elementi:
+-            # Resolve percorso and vascello from assegnazione
+-            cur.execute("""
+-                SELECT 
+-                    p.tempo_percorrenza_min,
+-                    ST_AsGeoJSON(p.geom_rotta),
+-                    p.pref,
+-                    p.vref,
+-                    c.orario_partenza_schedulato,
+-                    t.porto_partenza_id,
+-                    t.porto_arrivo_id,
+-                    p.vascello_id,
+-                    a.virtuale
+-                FROM percorso p
+-                JOIN corsa c ON c.id = p.id_corsa
+-                JOIN tratta t ON t.id = c.tratta_id
+-                JOIN assegnazione a ON a.percorso_id = p.id
+-                WHERE a.id = %s
+-            """, (el.assegnazione_id,))
+-
+-            rp = cur.fetchone()
+-            if rp is None:
+-                raise HTTPException(404, f"Assegnazione / Percorso non trovato: {el.assegnazione_id}")
+-
+-            tempo_interval, geom_json, pref_arr, vref_arr, orario_partenza, porto_partenza_id, porto_arrivo_id, vascello_id, virtuale = rp
+-
+-            cur.execute(
+-                "SELECT nome, mmsi FROM vascello WHERE id = %s",
+-                (vascello_id,)
+-            )
+-            rv = cur.fetchone()
+-            if rv is None:
+-                raise HTTPException(404, f"Vascello non trovato: {vascello_id}")
++            assegnazione = _get_json(OPERATIVO_SERVICE_URL, f"/internal/assegnazione/{el.assegnazione_id}")
++            if not isinstance(assegnazione, dict):
++                raise HTTPException(404, f"Assegnazione non trovata: {el.assegnazione_id}")
+ 
+-            nome_vascello, mmsi_vascello = rv
++            percorso_id = assegnazione.get("percorso_id")
++            if not percorso_id:
++                raise HTTPException(404, f"Percorso non associato all'assegnazione: {el.assegnazione_id}")
+ 
+-            cur.execute(
+-                "SELECT nome FROM porto WHERE id = %s",
+-                (porto_arrivo_id,)
+-            )
+-            ra = cur.fetchone()
+-            if ra is None:
+-                raise HTTPException(404, "Porto di arrivo non trovato")
++            percorso = _get_json(PERCORSI_SERVICE_URL, f"/internal/percorso/{percorso_id}?include=corsa,tratta,vascello")
++            if not isinstance(percorso, dict):
++                raise HTTPException(404, f"Percorso non trovato: {percorso_id}")
++
++            corsa = percorso.get("corsa") if isinstance(percorso.get("corsa"), dict) else {}
++            tratta = percorso.get("tratta") if isinstance(percorso.get("tratta"), dict) else {}
++            vascello = percorso.get("vascello") if isinstance(percorso.get("vascello"), dict) else {}
++
++            tempo_percorrenza_min = percorso.get("tempo_percorrenza")
++            geom_json = percorso.get("geom_rotta")
++            pref_arr = percorso.get("pref")
++            vref_arr = percorso.get("vref")
++            orario_partenza_raw = corsa.get("orario_partenza_schedulato")
++            porto_partenza_id = tratta.get("porto_partenza_id")
++            porto_arrivo_id = tratta.get("porto_arrivo_id")
++            vascello_id = percorso.get("vascello_id")
++            virtuale = assegnazione.get("virtuale")
++
++            if not (geom_json and orario_partenza_raw and porto_partenza_id and porto_arrivo_id and vascello_id):
++                raise HTTPException(400, f"Dati percorso incompleti per assegnazione: {el.assegnazione_id}")
++
++            orario_partenza = datetime.fromisoformat(str(orario_partenza_raw).replace("Z", "+00:00"))
+ 
+-            nome_porto_arrivo = ra[0]
++            nome_vascello = vascello.get("nome")
++            mmsi_vascello = vascello.get("mmsi")
++            if nome_vascello is None or mmsi_vascello is None:
++                vascello_full = _get_json(ANAGRAFICA_SERVICE_URL, f"/internal/vascello/{vascello_id}")
++                if not isinstance(vascello_full, dict):
++                    raise HTTPException(404, f"Vascello non trovato: {vascello_id}")
++                nome_vascello = vascello_full.get("nome")
++                mmsi_vascello = vascello_full.get("mmsi")
++
++            porto_arrivo = _get_json(ANAGRAFICA_SERVICE_URL, f"/internal/porto/{porto_arrivo_id}")
++            if not isinstance(porto_arrivo, dict):
++                raise HTTPException(404, "Porto di arrivo non trovato")
++            nome_porto_arrivo = porto_arrivo.get("nome")
+ 
+-            # Determine start coordinates: use provided values or fetch
+-            # from the porto di partenza for the percorso
+             if el.lat_start is None or el.lon_start is None:
+-                cur.execute(
+-                    "SELECT nome, ST_Y(coordinate_gps), ST_X(coordinate_gps) FROM porto WHERE id = %s",
+-                    (porto_partenza_id,)
+-                )
+-                rp_porto = cur.fetchone()
+-                if rp_porto is None:
++                porto_partenza = _get_json(ANAGRAFICA_SERVICE_URL, f"/internal/porto/{porto_partenza_id}")
++                if not isinstance(porto_partenza, dict):
+                     raise HTTPException(404, "Porto di partenza non trovato")
+-
+-                nome_porto_partenza, lat_db, lon_db = rp_porto
++                lat_db = porto_partenza.get("lat")
++                lon_db = porto_partenza.get("lon")
+                 lat_start = el.lat_start if el.lat_start is not None else lat_db
+                 lon_start = el.lon_start if el.lon_start is not None else lon_db
+             else:
+                 lat_start = el.lat_start
+                 lon_start = el.lon_start
+@@ -92,24 +101,18 @@ def build_and_run_simulation(data: SimulationBuildInput):
+                 "lat_start": lat_start,
+                 "lon_start": lon_start,
+                 "vascello": nome_vascello
+             })
+ 
+-            # tempo_percorrenza_min may be returned by the DB as a
+-            # datetime.timedelta (Postgres interval) or as a numeric value
+-            # representing minutes. Handle both cases.
+-            if isinstance(tempo_interval, timedelta):
+-                eta = orario_partenza + tempo_interval
+-            else:
+-                try:
+-                    eta = orario_partenza + timedelta(minutes=float(tempo_interval))
+-                except Exception:
+-                    eta = orario_partenza
++            try:
++                eta = orario_partenza + timedelta(minutes=float(tempo_percorrenza_min))
++            except Exception:
++                eta = orario_partenza
+ 
+             eta_str = eta.strftime("%Y-%m-%d %H:%M")
+ 
+-            geom = json.loads(geom_json)
++            geom = json.loads(geom_json) if isinstance(geom_json, str) else geom_json
+             coords = geom["coordinates"]
+ 
+             waypoints = []
+             for i, (lon, lat) in enumerate(coords):
+                 is_last = (i == len(coords) - 1)
+@@ -200,13 +203,12 @@ def build_and_run_simulation(data: SimulationBuildInput):
+         return {
+             "status": "ok",
+             "resolved_starts": vessels_resolved,
+             "simulation_response": r.json()
+         }
+-
+     finally:
+-        conn.close()
++        pass
+ 
+ 
+ def simula_piano(data):
+     """
+     Simula un piano operativo schedulando le simulazioni delle assegnazioni virtuali
+@@ -235,30 +237,40 @@ def simula_piano(data):
+         KAFKA_CONFIG["sim_speed_factor"] = data.sim_speed_factor
+         effective_sim_speed_factor = data.sim_speed_factor
+     else:
+         effective_sim_speed_factor = KAFKA_CONFIG["sim_speed_factor"]
+     
+-    conn = get_connection()
+-    cur = conn.cursor()
+-    
+     import os
+     try:
+-        # Recupera le assegnazioni virtuali del piano con i loro orari di partenza
+-        cur.execute("""
+-            SELECT 
+-                a.id as assegnazione_id,
+-                c.orario_partenza_schedulato
+-            FROM assegnazione a
+-            JOIN percorso p ON p.id = a.percorso_id
+-            JOIN corsa c ON c.id = p.id_corsa
+-            WHERE a.piano_id = %s 
+-              AND a.virtuale = true
+-              AND a.stato_esecuzione = 'PIANIFICATA'
+-            ORDER BY c.orario_partenza_schedulato ASC
+-        """, (data.piano_id,))
+-        
+-        rows = cur.fetchall()
++        assegnazioni = _get_json(OPERATIVO_SERVICE_URL, f"/internal/assegnazione/by_piano/{data.piano_id}")
++        if not isinstance(assegnazioni, list):
++            assegnazioni = []
++
++        rows = []
++        for a in assegnazioni:
++            if not isinstance(a, dict):
++                continue
++            if a.get("virtuale") is not True:
++                continue
++            if str(a.get("stato_esecuzione")) != "PIANIFICATA":
++                continue
++            corsa_id = a.get("id_corsa")
++            if not corsa_id:
++                continue
++            corsa = _get_json(OPERATIVO_SERVICE_URL, f"/internal/corsa/id/{corsa_id}")
++            if not isinstance(corsa, dict):
++                continue
++            orario_raw = corsa.get("orario_partenza_schedulato")
++            if not orario_raw:
++                continue
++            try:
++                orario_partenza = datetime.fromisoformat(str(orario_raw).replace("Z", "+00:00"))
++            except Exception:
++                continue
++            rows.append((str(a.get("id")), orario_partenza))
++
++        rows.sort(key=lambda item: item[1])
+         
+         if not rows:
+             return SimulaPianoResponse(
+                 piano_id=data.piano_id,
+                 status="ok",
+@@ -330,8 +342,7 @@ def simula_piano(data):
+             json.dump(output, f, ensure_ascii=False, indent=2)
+ 
+         return SimulaPianoResponse(**output)
+         
+     finally:
+-        cur.close()
+-        conn.close()
++        pass
+ 

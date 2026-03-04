@@ -1,0 +1,7 @@
+copernicusmarine==2.3.0
+Flask==3.1.2
+numpy==2.4.1
+pyais==2.9.2
+xarray==2025.4.0
+h5py
+netCDF4
