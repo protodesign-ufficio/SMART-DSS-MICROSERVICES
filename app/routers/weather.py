@@ -75,7 +75,7 @@ class WeatherLayerRequest(BaseModel):
     )
     bounds: WeatherBoundsRequest | None = Field(
         None,
-        description="Bounding-box geografico opzionale. Se omesso usa area default.",
+        description="Bounding-box geografico opzionale. Default: Golfo di Napoli (N 40.76, S 40.50, E 14.90, W 14.30).",
     )
     timestamp: str | None = Field(
         None,
@@ -261,7 +261,7 @@ visualizzazione su mappa Leaflet, con supporto completo per scenari what-if.
 | Campo | Tipo | Descrizione | Default |
 |-------|------|-------------|--------|
 | layer_type | string | `currents` (correnti) o `waves` (onde) | obbligatorio |
-| bounds | object | Bounding-box {north, south, east, west} | area default |
+| bounds | object | Bounding-box {north, south, east, west} | Golfo di Napoli (40.76, 40.50, 14.90, 14.30) |
 | timestamp | string | Timestamp ISO-8601 richiesto | più vicino disponibile |
 | use_cache | bool | Tenta recupero da cache DB | true |
 | save_cache | bool | Salva risposta in cache DB | true |

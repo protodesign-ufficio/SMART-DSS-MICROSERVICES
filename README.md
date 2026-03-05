@@ -251,7 +251,7 @@ Il backend espone **14 gruppi di endpoint** organizzati per dominio funzionale:
 | **Simulazione** | `/simulation/` | 2 | Simulazione fisica navigazione e piani anticipati |
 | **Deadhead Trips** | `/deadhead/` | 4 | Riposizionamenti a vuoto e idle in porto |
 | **Allarmi** | `/allarme/` | 1 | Lista allarmi operativi (delegato ad alerting_service) |
-| **Weather** | `/weather/` | 4 | Dati meteo-marini: layer dashboard, cache layer, health |
+| **Weather** | `/weather/` | 9 | Dati meteo-marini: layer dashboard, cache layer, scenari what-if CRUD, health |
 | **Replanning** | `/check_replanning` | 2 | Verifica automatica necessità di replanning + status |
 | **Configurazione** | `/api/config/`, `/config` | 4 | Parametri runtime Kafka e cache (hot-reload) |
 
@@ -280,12 +280,18 @@ Il backend espone **14 gruppi di endpoint** organizzati per dominio funzionale:
 | `POST` | `/internal/weather/layer` | Dati correnti/onde per dashboard (timestamp, items, range) |
 | `GET` | `/internal/weather/cache/layer` | Lista cache persistita dei layer meteo |
 | `GET` | `/internal/weather/cache/layer/{cache_key}` | Recupero payload meteo da cache persistita |
+| `GET` | `/internal/weather/scenarios` | Lista scenari meteo (preset built-in + salvati) |
+| `POST` | `/internal/weather/scenarios` | Crea nuovo scenario what-if personalizzato |
+| `GET` | `/internal/weather/scenarios/{id}` | Dettaglio scenario salvato |
+| `PUT` | `/internal/weather/scenarios/{id}` | Aggiorna scenario esistente |
+| `DELETE` | `/internal/weather/scenarios/{id}` | Elimina scenario salvato |
 
 ### Database dedicato Weather
 
 Il microservizio `weather` usa un database dedicato `weather_db` (PostgreSQL) per persistere:
 - cache layer (`weather_layer_cache`) con payload completo riutilizzabile
 - storico download subset NetCDF (`weather_subset_downloads`)
+- scenari what-if personalizzati (`weather_scenarios`) con CRUD completo
 
 Le tabelle vengono create automaticamente al bootstrap del servizio.
 

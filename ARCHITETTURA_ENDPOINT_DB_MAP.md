@@ -15,7 +15,7 @@
 | forecast | `forecast_db` | `travelmar_db` solo fallback legacy (disattivato in strict mode) |
 | alerting | `alerting_db` | `travelmar_db` solo fallback legacy (disattivato in strict mode) |
 | telemetry | `telemetry_db` | connessione dedicata via `TELEMETRY_DB_CONN` |
-| weather | `weather_db` | connessione dedicata via `WEATHER_DB_CONN`; tabelle `weather_layer_cache`, `weather_subset_downloads` |
+| weather | `weather_db` | connessione dedicata via `WEATHER_DB_CONN`; tabelle `weather_layer_cache`, `weather_subset_downloads`, `weather_scenarios` |
 | scheduler/simulator/replanning/config | N/A | servizi esterni/configurazione, non DB-centric gateway |
 
 ## Mappatura servizio <=> database (consumo runtime)
@@ -130,6 +130,11 @@
 | POST | `/weather/layer` | gateway -> weather | weather_db (cache layer) | `app/routers/weather.py` |
 | GET | `/weather/cache/layer` | gateway -> weather | weather_db (lista cache) | `app/routers/weather.py` |
 | GET | `/weather/cache/layer/{cache_key}` | gateway -> weather | weather_db (recupero cache) | `app/routers/weather.py` |
+| GET | `/weather/scenarios` | gateway -> weather | weather_db (scenari) | `app/routers/weather.py` |
+| POST | `/weather/scenarios` | gateway -> weather | weather_db (scenari) | `app/routers/weather.py` |
+| GET | `/weather/scenarios/{scenario_id}` | gateway -> weather | weather_db (scenari) | `app/routers/weather.py` |
+| PUT | `/weather/scenarios/{scenario_id}` | gateway -> weather | weather_db (scenari) | `app/routers/weather.py` |
+| DELETE | `/weather/scenarios/{scenario_id}` | gateway -> weather | weather_db (scenari) | `app/routers/weather.py` |
 
 ## Endpoint interni dei microservizi
 | Metodo | Endpoint | Servizio | DB usato | Sorgente |
@@ -196,6 +201,11 @@
 | GET | `/internal/weather/cache/layer` | weather service | weather_db (lista cache) | `weather_service/main.py` |
 | GET | `/internal/weather/cache/layer/{cache_key}` | weather service | weather_db (recupero cache) | `weather_service/main.py` |
 | POST | `/internal/weather/subset/download` | weather service | weather_db (storico download) | `weather_service/main.py` |
+| GET | `/internal/weather/scenarios` | weather service | weather_db (scenari) | `weather_service/main.py` |
+| POST | `/internal/weather/scenarios` | weather service | weather_db (scenari) | `weather_service/main.py` |
+| GET | `/internal/weather/scenarios/{scenario_id}` | weather service | weather_db (scenari) | `weather_service/main.py` |
+| PUT | `/internal/weather/scenarios/{scenario_id}` | weather service | weather_db (scenari) | `weather_service/main.py` |
+| DELETE | `/internal/weather/scenarios/{scenario_id}` | weather service | weather_db (scenari) | `weather_service/main.py` |
 
 ## Nota operativa
 - La tabella indica il **database primario attuale**. In strict mode i fallback legacy verso `travelmar_db` per i domini split sono bloccati/configurati per fallire.
