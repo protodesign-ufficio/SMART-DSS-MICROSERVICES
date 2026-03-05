@@ -1,7 +1,7 @@
 import requests
 import json
 from datetime import datetime, timedelta
-from app.core.config import OPT_URL, OPERATIVO_SERVICE_URL, ANAGRAFICA_SERVICE_URL, PERCORSI_SERVICE_URL, SERVICE_CONFIG
+from app.core.config import OPT_URL, OPERATIVO_SERVICE_URL, ANAGRAFICA_SERVICE_URL, PERCORSI_SERVICE_URL, SERVICE_CONFIG, WEATHER_SERVICE_URL
 from app.models.common import OttimizzatoreInput, OttimizzatoreBatchInput, RiposizionamentoInput
 from fastapi import HTTPException
 import psycopg2
@@ -171,6 +171,13 @@ def ottimizzatore(data: OttimizzatoreBatchInput):
                 "fake_data": inp.fake_data,
                 "tollerance": inp.tolerance
             }
+
+            # Risolvi scenario_id → scenario params dal weather service
+            if inp.scenario_id is not None:
+                scenario_data = _get_json(WEATHER_SERVICE_URL, f"/internal/weather/scenarios/{inp.scenario_id}", timeout=10.0)
+                if scenario_data is None:
+                    raise HTTPException(404, f"Scenario {inp.scenario_id} non trovato nel weather service")
+                payload["scenario"] = scenario_data.get("scenario", {})
             
             corsa_data = {
                 "corsa_id": inp.corsa_id,
@@ -356,6 +363,14 @@ def stima_riposizionamento(data):
                 "fake_data": inp.fake_data,
                 "tollerance": inp.tolerance
             }
+
+            # Risolvi scenario_id → scenario params dal weather service
+            if inp.scenario_id is not None:
+                scenario_data = _get_json(WEATHER_SERVICE_URL, f"/internal/weather/scenarios/{inp.scenario_id}", timeout=10.0)
+                if scenario_data is None:
+                    raise HTTPException(404, f"Scenario {inp.scenario_id} non trovato nel weather service")
+                payload["scenario"] = scenario_data.get("scenario", {})
+
             payloads_to_compute.append((inp, payload))
         
         # Seconda fase: chiamata unica al servizio esterno con lista di payload

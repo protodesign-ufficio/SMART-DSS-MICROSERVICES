@@ -33,6 +33,89 @@ WEATHER_SERVICE_URL = os.getenv("WEATHER_SERVICE_URL", "http://weather:8076")
 os.environ["HDF5_USE_FILE_LOCKING"] = "FALSE"
 os.environ["HDF5_DISABLE_VERSION_CHECK"] = "2"
 
+
+# ── Scenario what-if su xarray Dataset ────────────────────────────
+
+def _apply_scenario_to_dataset(ds, dataset_type, scenario):
+    """
+    Applica un modificatore di scenario what-if a un xarray Dataset in-place.
+
+    dataset_type: 'currents' oppure 'waves'
+    scenario: dict con chiavi opzionali multiplier, function, function_params, variables
+    """
+    if scenario is None:
+        return ds
+
+    multiplier = scenario.get("multiplier")
+    func_name = scenario.get("function")
+    func_params = scenario.get("function_params") or {}
+    target_vars = scenario.get("variables")
+
+    if dataset_type == "currents":
+        all_vars = ["uo", "vo"]
+    else:
+        all_vars = ["VHM0_WW", "VTM01_WW"]  # VMDR_WW (direzione) non viene scalato di default
+
+    vars_to_modify = [v for v in all_vars if v in ds.data_vars]
+    if target_vars:
+        # Mappa nomi scenario → nomi dataset
+        name_map = {"u": "uo", "v": "vo", "height": "VHM0_WW", "period": "VTM01_WW", "dir": "VMDR_WW"}
+        mapped = [name_map.get(v, v) for v in target_vars]
+        vars_to_modify = [v for v in mapped if v in ds.data_vars]
+
+    if not vars_to_modify:
+        return ds
+
+    # Calcola fattore spaziale
+    spatial_factor = None
+    if func_name and "latitude" in ds.coords and "longitude" in ds.coords:
+        lats = ds.coords["latitude"].values
+        lons = ds.coords["longitude"].values
+        lon_grid, lat_grid = np.meshgrid(lons, lats)
+
+        if func_name == "sinusoidal":
+            amplitude = func_params.get("amplitude", 0.5)
+            frequency = func_params.get("frequency", 1)
+            axis = func_params.get("axis", "lon")
+            phase = func_params.get("phase", 0.0)
+            arr = lon_grid if axis == "lon" else lat_grid
+            t = (arr - arr.min()) / max(arr.max() - arr.min(), 1e-9)
+            spatial_factor = 1.0 + amplitude * np.sin(2 * np.pi * frequency * t + phase)
+
+        elif func_name == "linear_ramp":
+            start_f = func_params.get("start_factor", 0.5)
+            end_f = func_params.get("end_factor", 2.0)
+            axis = func_params.get("axis", "lon")
+            arr = lon_grid if axis == "lon" else lat_grid
+            t = (arr - arr.min()) / max(arr.max() - arr.min(), 1e-9)
+            spatial_factor = start_f + (end_f - start_f) * t
+
+        elif func_name == "gaussian_peak":
+            cx = func_params.get("center_lat", (lats.min() + lats.max()) / 2)
+            cy = func_params.get("center_lon", (lons.min() + lons.max()) / 2)
+            radius = func_params.get("radius_deg", 0.1)
+            peak = func_params.get("peak_factor", 3.0)
+            dist2 = (lat_grid - cx) ** 2 + (lon_grid - cy) ** 2
+            spatial_factor = 1.0 + (peak - 1.0) * np.exp(-dist2 / (2 * radius ** 2))
+
+    # Combina multiplier e spatial_factor
+    if multiplier is not None and spatial_factor is not None:
+        total_factor = multiplier * spatial_factor
+    elif multiplier is not None:
+        total_factor = multiplier
+    elif spatial_factor is not None:
+        total_factor = spatial_factor
+    else:
+        return ds
+
+    ds = ds.copy(deep=True)
+    for var in vars_to_modify:
+        ds[var] = ds[var] * total_factor
+
+    print(f"[SCENARIO] Applicato scenario a dataset ({dataset_type}): vars={vars_to_modify}, "
+          f"multiplier={multiplier}, function={func_name}")
+    return ds
+
 def _ts_for_filename(s: str) -> str:
     # prova a fare parse ISO; altrimenti fallback a semplice sanificazione
     try:
@@ -125,6 +208,7 @@ def optimize_route(
     custom_current=None,
     eps_time=0.0, eps_cost=0.0, empty=False, fake_data=False, tollerance_minutes=60,
     vessel_signature="default_vessel",
+    scenario=None,
 ):
     """
     Esegue l'ottimizzazione del percorso tra start e goal usando Copernicus + routing.
@@ -202,7 +286,15 @@ def optimize_route(
     
     dataset_current = "cmems_mod_med_phy-cur_anfc_4.2km_PT15M-i"
     dataset_wave = "cmems_mod_med_wav_anfc_4.2km_PT1H-i"
-    dataset_hash = f"{dataset_current}_{dataset_wave}"
+    # Se c’è uno scenario, aggiungiamo un hash dei parametri al dataset_hash
+    # per separare i grafi cached con e senza scenario
+    if scenario:
+        scenario_hash = json.dumps(scenario, sort_keys=True)
+        import hashlib
+        scenario_suffix = "_sc_" + hashlib.sha256(scenario_hash.encode()).hexdigest()[:12]
+    else:
+        scenario_suffix = ""
+    dataset_hash = f"{dataset_current}_{dataset_wave}{scenario_suffix}"
 
     graph_time = datetime.fromisoformat(date_str)   # date_str che passi è "%Y-%m-%d %H:%M:%S"
     T = int(tollerance_minutes) * 60
@@ -234,6 +326,12 @@ def optimize_route(
             ds_wav = None  # se le onde falliscono, continuo con empty=True
 
         debug_dataset(ds)
+
+        # Applica scenario what-if ai dataset (se presente)
+        if scenario:
+            ds = _apply_scenario_to_dataset(ds, "currents", scenario)
+            if ds_wav is not None:
+                ds_wav = _apply_scenario_to_dataset(ds_wav, "waves", scenario)
 
         print(f"[DEBUG] Building base graph with ignore_land_mask={ignore_land_mask}")
         grafo_base, nodes = build_graph_from_grib(

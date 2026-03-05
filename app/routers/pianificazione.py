@@ -45,6 +45,13 @@ L'algoritmo minimizza simultaneamente:
 | fake_data | Usa meteo simulato | true |
 | ve_min | Velocità minima (kn) | 0.1 |
 | tolerance | Tolleranza algoritmo | 1 |
+| scenario_id | ID scenario meteo what-if (opzionale) | null |
+
+### Scenari What-If
+Il campo opzionale `scenario_id` permette di ottimizzare i percorsi usando dati meteo
+alterati secondo uno scenario salvato nel weather_service. Ad esempio, simulare una
+tempesta o mare calmo per verificare come cambiano i percorsi ottimali.
+Usare `GET /weather/scenarios` per ottenere gli scenari disponibili.
 
 ### Pipeline
 1. Recupero dati corsa e vascello dal DB
@@ -94,6 +101,25 @@ Calcola i costi di spostamento senza carico passeggeri, utile per:
 }
 ```
 
+### Parametri per elemento
+| Campo | Descrizione | Default |
+|-------|-------------|--------|
+| porto_partenza_id | UUID porto di partenza | obbligatorio |
+| porto_destinazione_id | UUID porto di destinazione | obbligatorio |
+| datetime_partenza | Data/ora partenza (ISO 8601) | obbligatorio |
+| vascello_id | UUID del vascello | obbligatorio |
+| fake_data | Usa meteo simulato | true |
+| ve_min | Velocità minima (kn) | 0.1 |
+| tolerance | Tolleranza algoritmo | 1 |
+| graph_cache_ttl_minutes | TTL cache snap temporale (min) | null |
+| scenario_id | ID scenario meteo what-if (opzionale) | null |
+
+### Scenari What-If
+Il campo opzionale `scenario_id` permette di stimare i riposizionamenti usando dati
+meteo alterati secondo uno scenario salvato nel weather_service. Ad esempio, simulare
+una tempesta per verificare come cambiano tempi e consumi di riposizionamento.
+Usare `GET /weather/scenarios` per ottenere gli scenari disponibili.
+
 ### Output per elemento
 - **tempo_riposizionamento**: tempo stimato in minuti
 - **consumo_riposizionamento**: carburante stimato in litri
@@ -133,9 +159,26 @@ Forecast ML → Weather Routing → KPI Calculation → Ranking
   "end": "2025-01-30T22:00:00",
   "vessels": ["uuid-v1", "uuid-v2", "uuid-v3"],
   "eps_time": 5,
-  "fake_data": true
+  "fake_data": true,
+  "scenario_id": null
 }
 ```
+
+### Parametri
+| Campo | Descrizione | Default |
+|-------|-------------|--------|
+| start | Inizio finestra temporale (ISO 8601) | obbligatorio |
+| end | Fine finestra temporale (ISO 8601) | obbligatorio |
+| vessels | Lista UUID vascelli disponibili | obbligatorio |
+| eps_time | Tolleranza temporale (min) | obbligatorio |
+| fake_data | Usa meteo simulato | obbligatorio |
+| scenario_id | ID scenario meteo what-if (opzionale) | null |
+
+### Scenari What-If
+Il campo opzionale `scenario_id` viene propagato a tutte le ottimizzazioni weather routing
+della pianificazione. Permette di generare piani operativi basati su condizioni meteo
+alterate (es. tempesta, mare calmo) per analisi what-if e confronto tra scenari.
+Usare `GET /weather/scenarios` per ottenere gli scenari disponibili.
 
 ### Elaborazione
 1. **Forecast**: previsione domanda passeggeri per ogni corsa
@@ -152,7 +195,7 @@ Mappa `{corsa_id: RouteAssignment}` con:
 ### Utilizzo tipico
 - Generazione piani operativi giornalieri
 - Decisioni assegnazione flotta
-- Analisi what-if con diversi set vascelli
+- Analisi what-if con diversi set vascelli e scenari meteo
     """,
     responses={
         200: {"description": "Pianificazione calcolata - ranking KPI per ogni corsa"},
@@ -263,6 +306,11 @@ Restituisce una lista di soluzioni Pareto-ottimali, ciascuna con:
 - **plan**: piano di assegnazione `{vessel_id: [lista percorsi]}`
 - **activities**: lista dettagliata con TRIP, REPOSITION, WAIT (se include_details=true)
 
+### Nota su Scenari What-If
+Questo endpoint lavora con percorsi **già calcolati**. Per ottenere scheduling basato
+su scenari meteo alterati, calcolare prima i percorsi con `scenario_id` tramite
+`POST /weather_routing/carico`, poi passare i percorsi risultanti a questo endpoint.
+
 ### Note
 - Le soluzioni sono ordinate per costo crescente
 - Ogni soluzione è Pareto-ottimale (non dominata)
@@ -308,6 +356,11 @@ Calcola lo scheduling ottimale per tutte le corse di un giorno specifico.
   (tramite `/weather_routing/carico`)
 - Le previsioni passeggeri devono essere state calcolate
   (tramite `/corsa/{id}/prevedi`)
+
+### Nota su Scenari What-If
+Questo endpoint lavora con percorsi **già calcolati**. Per ottenere scheduling basato
+su scenari meteo alterati, calcolare prima i percorsi con `scenario_id` tramite
+`POST /weather_routing/carico`, poi usare questo endpoint sul giorno risultante.
 
 ### Output
 Lista soluzioni Pareto-ottimali con:

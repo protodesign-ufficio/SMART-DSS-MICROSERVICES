@@ -63,6 +63,15 @@ class OttimizzatoreInput(BaseModel):
         ge=0.1,
         example=1
     )
+    scenario_id: int | None = Field(
+        None,
+        description=(
+            "ID di uno scenario meteo what-if salvato nel weather_service. "
+            "Se specificato, i dati Copernicus vengono alterati secondo lo scenario "
+            "prima dell'ottimizzazione. Usare GET /weather/scenarios per vedere "
+            "gli scenari disponibili o POST /weather/scenarios per crearne uno."
+        ),
+    )
 
     model_config = {
         "json_schema_extra": {
@@ -122,6 +131,15 @@ class RiposizionamentoInput(BaseModel):
         description="TTL cache in minuti per snap temporale richiesta (0 o None disattiva)",
         ge=0
     )
+    scenario_id: int | None = Field(
+        None,
+        description=(
+            "ID di uno scenario meteo what-if salvato nel weather_service. "
+            "Se specificato, i dati Copernicus vengono alterati secondo lo scenario "
+            "prima del calcolo del riposizionamento. Usare GET /weather/scenarios per vedere "
+            "gli scenari disponibili o POST /weather/scenarios per crearne uno."
+        ),
+    )
 
 class RiposizionamentoBatchInput(BaseModel):
     """Input batch per stime riposizionamento multiple."""
@@ -173,6 +191,15 @@ class AssignmentRequest(BaseModel):
     fake_data: bool = Field(
         ...,
         description="Se True, utilizza dati meteo simulati"
+    )
+    scenario_id: int | None = Field(
+        None,
+        description=(
+            "ID di uno scenario meteo what-if salvato nel weather_service. "
+            "Se specificato, i dati Copernicus vengono alterati secondo lo scenario "
+            "per tutte le ottimizzazioni della pianificazione. Usare GET /weather/scenarios "
+            "per vedere gli scenari disponibili o POST /weather/scenarios per crearne uno."
+        ),
     )
 
     model_config = {

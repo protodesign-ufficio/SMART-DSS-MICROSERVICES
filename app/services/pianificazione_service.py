@@ -160,14 +160,17 @@ def compute_assignments(data: dict):
 
         for vessel in vessels_data:
             vessel_id = vessel["id"]
-            opt_items.append({
+            opt_item = {
                 "corsa_id": route_id,
                 "vascello_id": vessel_id,
                 "eps_time": inp.eps_time,
                 "fake_data": inp.fake_data,
                 "ve_min": 0.1,
                 "tolerance": 1,
-            })
+            }
+            if inp.scenario_id is not None:
+                opt_item["scenario_id"] = inp.scenario_id
+            opt_items.append(opt_item)
             opt_items_mapping.append((route_id, vessel))
 
     if opt_items:

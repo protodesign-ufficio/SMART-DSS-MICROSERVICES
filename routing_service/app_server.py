@@ -3,7 +3,7 @@ from http.client import HTTPException
 from flask import Flask, request, jsonify
 from Api_Copernicus import generate_fake_copernicus_dataset_km
 from graphs_cell import _CACHE, floor_time, get_cached_namoa_graph, load_cached_graphs_from_disk, save_namoa_graph
-from optimizer_service import build_graph_from_grib, debug_dataset, load_dataset_for_date, normalize_time, optimize_route
+from optimizer_service import build_graph_from_grib, debug_dataset, load_dataset_for_date, normalize_time, optimize_route, _apply_scenario_to_dataset
 from constants import CUSTOM_CURRENT, latlon_to_xy, xy_to_latlon
 from datetime import datetime, timedelta
 
@@ -91,7 +91,14 @@ def precompute():
 
         dataset_current = "cmems_mod_med_phy-cur_anfc_4.2km_PT15M-i"
         dataset_wave = "cmems_mod_med_wav_anfc_4.2km_PT1H-i"
-        dataset_hash = f"{dataset_current}_{dataset_wave}"
+
+        scenario = payload.get("scenario", None)
+        if scenario:
+            import json, hashlib
+            sc_hash = "_sc_" + hashlib.sha256(json.dumps(scenario, sort_keys=True).encode()).hexdigest()[:12]
+        else:
+            sc_hash = ""
+        dataset_hash = f"{dataset_current}_{dataset_wave}{sc_hash}"
 
         print(f"[PRECOMPUTE] tollerance={tollerance_minutes} min, delta={delta_minute} min")
 
@@ -134,6 +141,11 @@ def precompute():
             )
 
             debug_dataset(ds)
+
+            # Applica scenario what-if ai dataset (se presente)
+            if scenario:
+                ds = _apply_scenario_to_dataset(ds, "currents", scenario)
+                ds_wav = _apply_scenario_to_dataset(ds_wav, "waves", scenario)
 
             # 2) Grafo base
             grafo_base, nodes = build_graph_from_grib(ds, graph_time)
@@ -218,6 +230,7 @@ def optimize():
         # dentro /optimize, prima di chiamare optimize_route
         tollerance_minutes = int(payload.get("tollerance", 60))
         vessel_signature = vessel["id"]
+        scenario = payload.get("scenario", None)
 
         result = optimize_route(
             vessel_id=vessel["id"],
@@ -249,6 +262,7 @@ def optimize():
             # NUOVI (coerenza cache):
             tollerance_minutes=tollerance_minutes,
             vessel_signature=vessel_signature,
+            scenario=scenario,
         )
 
         percorsi = convert_optimizer_output_to_percorsi(result)
@@ -307,6 +321,7 @@ def optimizelist():
 
             tollerance_minutes = int(job.get("tollerance", 60))
             vessel_signature = vessel.get("id", "default_vessel")
+            scenario = job.get("scenario", None)
 
             result = optimize_route(
                 vessel_id=vessel["id"],
@@ -336,6 +351,7 @@ def optimizelist():
                 fake_data=bool(job.get("fake_data", False)),
                 tollerance_minutes=tollerance_minutes,
                 vessel_signature=vessel_signature,
+                scenario=scenario,
             )
 
             percorsi = convert_optimizer_output_to_percorsi(result)
