@@ -1,4 +1,5 @@
 import os
+import math
 import threading
 import json
 import hashlib
@@ -12,6 +13,7 @@ import xarray as xr
 import psycopg2
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
+from typing import Optional
 
 app = FastAPI(
     title="Weather Internal Service",
@@ -46,6 +48,61 @@ class Bounds(BaseModel):
     west: float | None = Field(None, description="Longitudine ovest (gradi decimali, es. 14.30)")
 
 
+class ScenarioModifier(BaseModel):
+    """Modificatore what-if per generare scenari meteo sintetici.
+
+    Permette di alterare i dati reali Copernicus applicando un fattore
+    moltiplicativo globale e/o una funzione di modulazione spaziale.
+    I due effetti si compongono: total_factor = multiplier × function(lat, lon).
+    """
+    multiplier: float | None = Field(
+        None,
+        description=(
+            "Fattore moltiplicativo globale applicato a tutte le grandezze."
+            " Es. 2.0 = raddoppia intensità, 0.5 = dimezza."
+        ),
+    )
+    function: str | None = Field(
+        None,
+        pattern="^(sinusoidal|linear_ramp|gaussian_peak)$",
+        description=(
+            "Funzione di modulazione spaziale: "
+            "'sinusoidal' (onda sin lungo un asse), "
+            "'linear_ramp' (rampa lineare), "
+            "'gaussian_peak' (picco gaussiano localizzato)."
+        ),
+    )
+    function_params: dict | None = Field(
+        None,
+        description=(
+            "Parametri della funzione di modulazione.\n"
+            "sinusoidal  → amplitude (0-1, def 0.5), frequency (cicli, def 1), "
+            "axis ('lon'|'lat', def 'lon'), phase (rad, def 0).\n"
+            "linear_ramp → start_factor (def 0.5), end_factor (def 2.0), "
+            "axis ('lon'|'lat', def 'lon').\n"
+            "gaussian_peak → center_lat, center_lon, radius_deg (def 0.1), "
+            "peak_factor (def 3.0)."
+        ),
+    )
+    variables: list[str] | None = Field(
+        None,
+        description=(
+            "Variabili su cui applicare la modifica. "
+            "Correnti: 'u','v' (o entrambi). Onde: 'height','period','dir'. "
+            "Se omesso modifica tutte le grandezze di intensità "
+            "(u,v per correnti; height,period per onde)."
+        ),
+    )
+
+
+class ScenarioCreate(BaseModel):
+    """Body per la creazione/aggiornamento di uno scenario persistente."""
+    name: str = Field(..., min_length=1, max_length=100, description="Nome univoco dello scenario.")
+    label: str | None = Field(None, max_length=200, description="Etichetta breve human-friendly.")
+    description: str | None = Field(None, max_length=1000, description="Descrizione testuale dello scenario.")
+    scenario: ScenarioModifier = Field(..., description="Parametri del modificatore what-if.")
+
+
 class LayerRequest(BaseModel):
     """Richiesta di un layer meteo (correnti o onde) per la dashboard."""
     layer_type: str = Field(
@@ -58,6 +115,21 @@ class LayerRequest(BaseModel):
     save_cache: bool = Field(True, description="Se true, salva il risultato in cache DB dopo il fetch da Copernicus.")
     force_refresh: bool = Field(False, description="Se true, ignora la cache e forza un nuovo fetch da Copernicus.")
     max_age_minutes: int | None = Field(None, description="TTL massimo della cache in minuti. Se omesso usa il default di sistema (env WEATHER_LAYER_CACHE_TTL_MIN).")
+    scenario: ScenarioModifier | None = Field(
+        None,
+        description=(
+            "Modificatore di scenario what-if. Se presente, i dati reali vengono "
+            "alterati secondo i parametri specificati (moltiplicatore e/o funzione spaziale). "
+            "La cache viene saltata quando uno scenario è attivo."
+        ),
+    )
+    scenario_id: int | None = Field(
+        None,
+        description=(
+            "ID di uno scenario salvato nel database. Se specificato, il campo 'scenario' "
+            "viene ignorato e si usa lo scenario persistente corrispondente."
+        ),
+    )
 
 
 class SubsetRequest(BaseModel):
@@ -94,14 +166,29 @@ def _ensure_schema() -> None:
                 dataset_id TEXT NOT NULL,
                 bounds_json JSONB NULL,
                 payload_json JSONB NOT NULL,
+                source TEXT NOT NULL DEFAULT 'copernicus',
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
+            ALTER TABLE weather_layer_cache ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'copernicus';
             """
         )
         cur.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_weather_layer_cache_lookup
             ON weather_layer_cache (layer_type, created_at DESC);
+            """
+        )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS weather_scenarios (
+                id BIGSERIAL PRIMARY KEY,
+                name TEXT UNIQUE NOT NULL,
+                label TEXT NULL,
+                description TEXT NULL,
+                scenario_json JSONB NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
             """
         )
         cur.execute(
@@ -150,6 +237,13 @@ def _cache_key_for_layer(req: LayerRequest) -> str:
         "timestamp": req.timestamp,
         "bounds": _bounds_to_dict(req.bounds),
     }
+    if req.scenario is not None:
+        payload["scenario"] = {
+            "multiplier": req.scenario.multiplier,
+            "function": req.scenario.function,
+            "function_params": req.scenario.function_params,
+            "variables": req.scenario.variables,
+        }
     raw = json.dumps(payload, sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
@@ -195,6 +289,7 @@ def _upsert_layer_cache(
     dataset_id: str,
     effective_timestamp: str,
     payload: dict,
+    source: str = "copernicus",
 ) -> None:
     conn = _get_db_connection()
     cur = conn.cursor()
@@ -209,8 +304,9 @@ def _upsert_layer_cache(
                 dataset_id,
                 bounds_json,
                 payload_json,
+                source,
                 created_at
-            ) VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, NOW())
+            ) VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, NOW())
             ON CONFLICT (cache_key)
             DO UPDATE SET
                 layer_type = EXCLUDED.layer_type,
@@ -219,6 +315,7 @@ def _upsert_layer_cache(
                 dataset_id = EXCLUDED.dataset_id,
                 bounds_json = EXCLUDED.bounds_json,
                 payload_json = EXCLUDED.payload_json,
+                source = EXCLUDED.source,
                 created_at = NOW();
             """,
             (
@@ -229,6 +326,7 @@ def _upsert_layer_cache(
                 dataset_id,
                 json.dumps(_bounds_to_dict(req.bounds)),
                 json.dumps(payload),
+                source,
             ),
         )
         conn.commit()
@@ -335,6 +433,141 @@ def _slice_for_coord(ds, coord_name: str, low: float, high: float):
     return ds.sel({coord_name: slice(high, low)})
 
 
+# ---------------------------------------------------------------------------
+#  Scenario – what-if modifiers
+# ---------------------------------------------------------------------------
+
+def _compute_spatial_factor(
+    lat: float,
+    lon: float,
+    scenario: ScenarioModifier,
+    lat_range: tuple[float, float],
+    lon_range: tuple[float, float],
+) -> float:
+    """Restituisce il fattore di modulazione spaziale per un singolo punto."""
+    if not scenario.function:
+        return 1.0
+
+    p = scenario.function_params or {}
+
+    if scenario.function == "sinusoidal":
+        amplitude = float(p.get("amplitude", 0.5))
+        frequency = float(p.get("frequency", 1.0))
+        phase = float(p.get("phase", 0.0))
+        axis = p.get("axis", "lon")
+        if axis == "lat":
+            span = lat_range[1] - lat_range[0]
+            t = (lat - lat_range[0]) / span if span else 0.0
+        else:
+            span = lon_range[1] - lon_range[0]
+            t = (lon - lon_range[0]) / span if span else 0.0
+        return 1.0 + amplitude * math.sin(2.0 * math.pi * frequency * t + phase)
+
+    if scenario.function == "linear_ramp":
+        start_f = float(p.get("start_factor", 0.5))
+        end_f = float(p.get("end_factor", 2.0))
+        axis = p.get("axis", "lon")
+        if axis == "lat":
+            span = lat_range[1] - lat_range[0]
+            t = (lat - lat_range[0]) / span if span else 0.0
+        else:
+            span = lon_range[1] - lon_range[0]
+            t = (lon - lon_range[0]) / span if span else 0.0
+        return start_f + (end_f - start_f) * t
+
+    if scenario.function == "gaussian_peak":
+        clat = float(p.get("center_lat", (lat_range[0] + lat_range[1]) / 2))
+        clon = float(p.get("center_lon", (lon_range[0] + lon_range[1]) / 2))
+        radius = float(p.get("radius_deg", 0.1))
+        peak = float(p.get("peak_factor", 3.0))
+        dist2 = (lat - clat) ** 2 + (lon - clon) ** 2
+        return 1.0 + (peak - 1.0) * math.exp(-dist2 / (2.0 * radius ** 2))
+
+    return 1.0
+
+
+def _apply_scenario(
+    items: list[dict],
+    layer_type: str,
+    scenario: ScenarioModifier | None,
+) -> list[dict]:
+    """Applica il modificatore di scenario agli items (in-place) e li restituisce."""
+    if scenario is None:
+        return items
+    if not items:
+        return items
+
+    global_mult = scenario.multiplier if scenario.multiplier is not None else 1.0
+    target_vars = scenario.variables  # None = tutte
+
+    lats = [it["lat"] for it in items]
+    lons = [it["lon"] for it in items]
+    lat_range = (min(lats), max(lats))
+    lon_range = (min(lons), max(lons))
+
+    for it in items:
+        factor = global_mult * _compute_spatial_factor(
+            it["lat"], it["lon"], scenario, lat_range, lon_range,
+        )
+        if layer_type == "currents":
+            if target_vars is None or "u" in target_vars:
+                it["u"] *= factor
+            if target_vars is None or "v" in target_vars:
+                it["v"] *= factor
+        else:  # waves
+            if target_vars is None or "height" in target_vars:
+                it["height"] = max(0.0, it["height"] * factor)
+            if target_vars is None or "period" in target_vars:
+                it["period"] = max(0.0, it["period"] * factor)
+            if target_vars is not None and "dir" in target_vars:
+                it["dir"] = it["dir"] * factor % 360.0
+
+    return items
+
+
+# Preset di scenari pronti all'uso
+SCENARIO_PRESETS: dict[str, dict] = {
+    "calm_sea": {
+        "label": "Mare calmo",
+        "description": "Riduce correnti e onde al 30% dell'intensità reale.",
+        "scenario": {"multiplier": 0.3},
+    },
+    "rough_sea": {
+        "label": "Mare mosso",
+        "description": "Raddoppia l'intensità di correnti e onde.",
+        "scenario": {"multiplier": 2.0},
+    },
+    "storm": {
+        "label": "Tempesta",
+        "description": "Triplica l'intensità con un picco gaussiano al centro dell'area.",
+        "scenario": {
+            "multiplier": 2.5,
+            "function": "gaussian_peak",
+            "function_params": {"radius_deg": 0.15, "peak_factor": 3.0},
+        },
+    },
+    "current_gradient_ew": {
+        "label": "Gradiente correnti W→E",
+        "description": "Correnti deboli a ovest, forti a est (rampa lineare 0.5× → 2.5×).",
+        "scenario": {
+            "function": "linear_ramp",
+            "function_params": {"start_factor": 0.5, "end_factor": 2.5, "axis": "lon"},
+            "variables": ["u", "v"],
+        },
+    },
+    "wave_swell": {
+        "label": "Onda lunga sinusoidale",
+        "description": "Modulazione sinusoidale dell'altezza onda lungo la longitudine.",
+        "scenario": {
+            "multiplier": 1.5,
+            "function": "sinusoidal",
+            "function_params": {"amplitude": 0.6, "frequency": 2, "axis": "lon"},
+            "variables": ["height"],
+        },
+    },
+}
+
+
 @app.get(
     "/health",
     tags=["Infrastruttura"],
@@ -431,6 +664,25 @@ def subset_download(req: SubsetRequest):
 def get_layer_data(req: LayerRequest):
     """Recupera dati correnti/onde da cache o Copernicus e restituisce items geolocalizzati."""
     _ensure_login()
+
+    # Risolvi scenario_id → scenario dal DB
+    if req.scenario_id is not None:
+        conn = _get_db_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "SELECT scenario_json FROM weather_scenarios WHERE id = %s",
+                (req.scenario_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail=f"Scenario {req.scenario_id} non trovato.")
+            req.scenario = ScenarioModifier(**row[0])
+        finally:
+            cur.close()
+            conn.close()
+
+    has_scenario = req.scenario is not None
 
     ttl_minutes = req.max_age_minutes if req.max_age_minutes is not None else _LAYER_CACHE_TTL_MIN
     cache_key = _cache_key_for_layer(req)
@@ -530,12 +782,36 @@ def get_layer_data(req: LayerRequest):
                     )
 
         ds.close()
+
+        # ── Applicazione scenario what-if ──
+        if has_scenario:
+            items = _apply_scenario(items, req.layer_type, req.scenario)
+            # Ricalcola range dopo la modifica
+            if req.layer_type == "currents" and items:
+                mags_s = [math.sqrt(it["u"] ** 2 + it["v"] ** 2) for it in items]
+                val_min, val_max = min(mags_s), max(mags_s)
+            elif items:
+                heights = [it["height"] for it in items]
+                val_min, val_max = min(heights), max(heights)
+
         payload = {
             "timestamp": data_time.replace("T", " "),
             "dataset": dataset_id,
             "items": items,
             "range": {"min": val_min, "max": val_max},
         }
+
+        if has_scenario:
+            payload["scenario"] = {
+                "multiplier": req.scenario.multiplier,
+                "function": req.scenario.function,
+                "function_params": req.scenario.function_params,
+                "variables": req.scenario.variables,
+            }
+            payload["source"] = "copernicus+scenario"
+        else:
+            payload["source"] = "copernicus"
+
         if req.save_cache:
             _upsert_layer_cache(
                 cache_key=cache_key,
@@ -543,8 +819,9 @@ def get_layer_data(req: LayerRequest):
                 dataset_id=dataset_id,
                 effective_timestamp=payload["timestamp"],
                 payload=payload,
+                source=payload["source"],
             )
-        payload["source"] = "copernicus"
+
         payload["cache_key"] = cache_key
         return payload
     except HTTPException:
@@ -648,6 +925,187 @@ def get_cached_layer_payload(cache_key: str):
         payload["cache_key"] = cache_key
         payload["cached_at"] = row[1].isoformat() if row[1] else None
         return payload
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.get(
+    "/internal/weather/scenarios",
+    tags=["Scenari"],
+    summary="Lista scenari (preset + salvati)",
+    description=(
+        "Restituisce tutti gli scenari disponibili: i preset built-in e quelli "
+        "salvati nel database. Gli scenari salvati includono un campo 'id' "
+        "utilizzabile come scenario_id nella LayerRequest."
+    ),
+)
+def list_scenarios():
+    saved = []
+    try:
+        conn = _get_db_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "SELECT id, name, label, description, scenario_json, created_at, updated_at "
+                "FROM weather_scenarios ORDER BY created_at DESC"
+            )
+            for row in cur.fetchall():
+                saved.append({
+                    "id": row[0],
+                    "name": row[1],
+                    "label": row[2],
+                    "description": row[3],
+                    "scenario": row[4],
+                    "created_at": row[5].isoformat() if row[5] else None,
+                    "updated_at": row[6].isoformat() if row[6] else None,
+                })
+        finally:
+            cur.close()
+            conn.close()
+    except Exception:
+        pass
+    return {"presets": SCENARIO_PRESETS, "saved": saved}
+
+
+@app.post(
+    "/internal/weather/scenarios",
+    tags=["Scenari"],
+    summary="Crea uno scenario personalizzato",
+    description=(
+        "Salva un nuovo scenario what-if nel database. Lo scenario può essere "
+        "riutilizzato nelle richieste layer specificando il suo 'id' nel campo "
+        "'scenario_id' della LayerRequest, senza dover ripetere i parametri ogni volta."
+    ),
+)
+def create_scenario(body: ScenarioCreate):
+    scenario_dict = body.scenario.model_dump(exclude_none=True)
+    conn = _get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            INSERT INTO weather_scenarios (name, label, description, scenario_json)
+            VALUES (%s, %s, %s, %s::jsonb)
+            RETURNING id, created_at;
+            """,
+            (body.name, body.label, body.description, json.dumps(scenario_dict)),
+        )
+        row = cur.fetchone()
+        conn.commit()
+        return {
+            "id": row[0],
+            "name": body.name,
+            "label": body.label,
+            "description": body.description,
+            "scenario": scenario_dict,
+            "created_at": row[1].isoformat() if row[1] else None,
+        }
+    except psycopg2.errors.UniqueViolation:
+        conn.rollback()
+        raise HTTPException(status_code=409, detail=f"Scenario con nome '{body.name}' esiste già.")
+    except Exception as exc:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"Errore creazione scenario: {exc}") from exc
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.get(
+    "/internal/weather/scenarios/{scenario_id}",
+    tags=["Scenari"],
+    summary="Dettaglio scenario salvato",
+    description="Restituisce il dettaglio di uno scenario salvato identificato dal suo ID numerico.",
+)
+def get_scenario(scenario_id: int):
+    conn = _get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "SELECT id, name, label, description, scenario_json, created_at, updated_at "
+            "FROM weather_scenarios WHERE id = %s",
+            (scenario_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Scenario {scenario_id} non trovato.")
+        return {
+            "id": row[0],
+            "name": row[1],
+            "label": row[2],
+            "description": row[3],
+            "scenario": row[4],
+            "created_at": row[5].isoformat() if row[5] else None,
+            "updated_at": row[6].isoformat() if row[6] else None,
+        }
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.put(
+    "/internal/weather/scenarios/{scenario_id}",
+    tags=["Scenari"],
+    summary="Aggiorna scenario salvato",
+    description="Aggiorna i parametri di uno scenario esistente identificato dal suo ID.",
+)
+def update_scenario(scenario_id: int, body: ScenarioCreate):
+    scenario_dict = body.scenario.model_dump(exclude_none=True)
+    conn = _get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            UPDATE weather_scenarios
+            SET name = %s, label = %s, description = %s,
+                scenario_json = %s::jsonb, updated_at = NOW()
+            WHERE id = %s
+            RETURNING updated_at;
+            """,
+            (body.name, body.label, body.description, json.dumps(scenario_dict), scenario_id),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Scenario {scenario_id} non trovato.")
+        conn.commit()
+        return {
+            "id": scenario_id,
+            "name": body.name,
+            "label": body.label,
+            "description": body.description,
+            "scenario": scenario_dict,
+            "updated_at": row[0].isoformat() if row[0] else None,
+        }
+    except psycopg2.errors.UniqueViolation:
+        conn.rollback()
+        raise HTTPException(status_code=409, detail=f"Scenario con nome '{body.name}' esiste già.")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"Errore aggiornamento scenario: {exc}") from exc
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.delete(
+    "/internal/weather/scenarios/{scenario_id}",
+    tags=["Scenari"],
+    summary="Elimina scenario salvato",
+    description="Elimina uno scenario dal database. L'operazione è irreversibile.",
+)
+def delete_scenario(scenario_id: int):
+    conn = _get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("DELETE FROM weather_scenarios WHERE id = %s RETURNING id;", (scenario_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Scenario {scenario_id} non trovato.")
+        conn.commit()
+        return {"deleted": True, "id": scenario_id}
     finally:
         cur.close()
         conn.close()
