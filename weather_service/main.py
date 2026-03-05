@@ -305,6 +305,36 @@ def _sanitize_filename(name: str) -> str:
     return candidate
 
 
+def _normalize_layer_bounds(bounds: Bounds | None, pad: float = 0.0) -> tuple[float, float, float, float]:
+    if bounds:
+        north = bounds.north if bounds.north is not None else 40.76
+        south = bounds.south if bounds.south is not None else 40.50
+        east = bounds.east if bounds.east is not None else 14.90
+        west = bounds.west if bounds.west is not None else 14.30
+    else:
+        north, south, east, west = 40.76, 40.50, 14.90, 14.30
+
+    lat_min = min(south, north) - pad
+    lat_max = max(south, north) + pad
+    lon_min = min(west, east) - pad
+    lon_max = max(west, east) + pad
+    return lat_min, lat_max, lon_min, lon_max
+
+
+def _slice_for_coord(ds, coord_name: str, low: float, high: float):
+    if coord_name not in ds.coords:
+        return ds
+
+    values = ds[coord_name].values
+    if len(values) < 2:
+        return ds.sel({coord_name: slice(low, high)})
+
+    is_ascending = bool(values[0] <= values[-1])
+    if is_ascending:
+        return ds.sel({coord_name: slice(low, high)})
+    return ds.sel({coord_name: slice(high, low)})
+
+
 @app.get(
     "/health",
     tags=["Infrastruttura"],
@@ -433,19 +463,11 @@ def get_layer_data(req: LayerRequest):
         except KeyError:
             ds_slice = ds.isel(time=-1)
 
-        if req.bounds:
-            pad = 0.05
-            lat_min = (req.bounds.south if req.bounds.south is not None else 40.50) - pad
-            lat_max = (req.bounds.north if req.bounds.north is not None else 40.76) + pad
-            lon_min = (req.bounds.west if req.bounds.west is not None else 14.30) - pad
-            lon_max = (req.bounds.east if req.bounds.east is not None else 14.90) + pad
-        else:
-            lat_min, lat_max, lon_min, lon_max = 40.50, 40.76, 14.30, 14.90
+        req_lat_min, req_lat_max, req_lon_min, req_lon_max = _normalize_layer_bounds(req.bounds, pad=0.0)
+        lat_min, lat_max, lon_min, lon_max = _normalize_layer_bounds(req.bounds, pad=0.05)
 
-        ds_slice = ds_slice.sel(
-            latitude=slice(lat_min, lat_max),
-            longitude=slice(lon_min, lon_max),
-        )
+        ds_slice = _slice_for_coord(ds_slice, "latitude", lat_min, lat_max)
+        ds_slice = _slice_for_coord(ds_slice, "longitude", lon_min, lon_max)
         ds_slice = ds_slice.isel(
             latitude=slice(0, None, 1),
             longitude=slice(0, None, 1),
@@ -457,15 +479,13 @@ def get_layer_data(req: LayerRequest):
         dt_val = ds_slice.time.values if "time" in ds_slice.coords else None
         data_time = str(np.datetime_as_string(dt_val, unit="m")) if dt_val is not None else "?"
 
-        lat_req_min, lat_req_max = 40.52, 40.80
-        lon_req_min, lon_req_max = 14.30, 14.90
         lat_col = "latitude" if "latitude" in df.columns else "lat"
         lon_col = "longitude" if "longitude" in df.columns else "lon"
         df = df[
-            (df[lat_col] >= lat_req_min)
-            & (df[lat_col] <= lat_req_max)
-            & (df[lon_col] >= lon_req_min)
-            & (df[lon_col] <= lon_req_max)
+            (df[lat_col] >= req_lat_min)
+            & (df[lat_col] <= req_lat_max)
+            & (df[lon_col] >= req_lon_min)
+            & (df[lon_col] <= req_lon_max)
         ]
 
         val_min, val_max = 0.0, 1.0

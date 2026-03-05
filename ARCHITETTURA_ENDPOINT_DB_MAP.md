@@ -53,6 +53,9 @@
 ### Telemetry DB
 ![ER telemetry](image/telemetry.png)
 
+### Weather DB
+![ER weather](image/weather.png)
+
 ## Endpoint pubblici del Gateway (`backend` su :15080)
 | Metodo | Endpoint | Servizio proprietario | DB usato | Sorgente |
 |---|---|---|---|---|

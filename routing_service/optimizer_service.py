@@ -98,6 +98,14 @@ def normalize_time(dt: datetime) -> datetime:
     return dt.replace(minute=0, second=0, microsecond=0)
 
 
+def _count_navigable_cells(grafo: dict) -> int:
+    navigable = 0
+    for edges in grafo.values():
+        if any(len(edge) >= 2 and edge[1] < float("inf") for edge in edges):
+            navigable += 1
+    return navigable
+
+
 def optimize_route(
     vessel_id,
     vessel_name,
@@ -200,6 +208,81 @@ def optimize_route(
     T = int(tollerance_minutes) * 60
     bucket_time = floor_time(graph_time, T)
 
+    def _build_and_cache_graph(ignore_land_mask: bool):
+        if ignore_land_mask:
+            print("[OPTIMIZE] Rebuild con fallback: ignore_land_mask=True")
+
+        if fake_data:
+            ds = generate_fake_copernicus_dataset_km(bbox, resolution_km=2)
+        else:
+            ds = load_dataset_for_date(
+                graph_time.strftime("%Y-%m-%d %H:%M:%S"),
+                bbox,
+                dataset_current
+            )
+
+        print("[DEBUG] Loading wave dataset...")
+        try:
+            ds_wav = load_dataset_for_date(
+                graph_time.strftime("%Y-%m-%d %H:%M:%S"),
+                bbox,
+                dataset_wave
+            )
+            print("[DEBUG] Wave dataset loaded successfully")
+        except Exception as wave_exc:
+            print(f"[DEBUG][ERROR] Wave dataset failed: {wave_exc}")
+            ds_wav = None  # se le onde falliscono, continuo con empty=True
+
+        debug_dataset(ds)
+
+        print(f"[DEBUG] Building base graph with ignore_land_mask={ignore_land_mask}")
+        grafo_base, nodes = build_graph_from_grib(
+            ds,
+            graph_time,
+            ignore_land_mask=ignore_land_mask,
+        )
+        print(f"[DEBUG] Base graph built: {len(grafo_base)} cells")
+
+        # se le onde non sono disponibili, disabilito calcolo comfort
+        use_empty = empty or (ds_wav is None)
+        if ds_wav is None:
+            print("[DEBUG] Wave dataset non disponibile, uso empty=True per calcolo comfort")
+
+        print(f"[DEBUG] Building weighted NAMOA graph (empty={use_empty})...")
+        grafo, cell_to_xy, currents, edge_data = build_double_weighted_graph_NAMOA(
+            grafo=grafo_base,
+            nodes=nodes,
+            dataset=ds,
+            dataset_wave=ds_wav,
+            time=graph_time,
+            bbox=bbox,
+            grid_spacing=grid_spacing,
+            Vp_max=vp_max,
+            vel_vec=vel_vec,
+            Ve_min=ve_min,
+            custom_current=custom_current,
+            empty=use_empty,
+            vessel_length=vessel_length
+        )
+
+        navigable_cells = _count_navigable_cells(grafo)
+        print(f"[OPTIMIZE] Navigable cells: {navigable_cells}")
+        if navigable_cells == 0:
+            return None
+
+        return save_namoa_graph(
+            grafo=grafo,
+            cell_to_xy=cell_to_xy,
+            currents=currents,
+            edge_data=edge_data,
+            time=bucket_time,
+            bbox=bbox,
+            dataset_hash=dataset_hash,
+            vessel_signature=vessel_signature,
+            fake_data=fake_data,
+            tollerance_seconds=T
+        )
+
 
     g = get_cached_namoa_graph(
         time=bucket_time,
@@ -213,70 +296,51 @@ def optimize_route(
     if g is None:
         print("[OPTIMIZE] Graph not in cache → generating on demand...")
 
-        # 1) Dataset
-        if fake_data:
-            ds = generate_fake_copernicus_dataset_km(bbox, resolution_km=2)
-        else:
-            ds = load_dataset_for_date(
-                graph_time.strftime("%Y-%m-%d %H:%M:%S"),
-                bbox,
-                dataset_current
-            )
-
-        ds_wav = load_dataset_for_date(
-            graph_time.strftime("%Y-%m-%d %H:%M:%S"),
-            bbox,
-            dataset_wave
-        )
-
-        debug_dataset(ds)
-
-        # 2) Grafo base
-        grafo_base, nodes = build_graph_from_grib(ds, graph_time)
-
-        # 3) Grafo NAMOA
-        grafo, cell_to_xy, currents, edge_data = build_double_weighted_graph_NAMOA(
-            grafo=grafo_base,
-            nodes=nodes,
-            dataset=ds,
-            dataset_wave=ds_wav,
-            time=graph_time,
-            bbox=bbox,
-            grid_spacing=grid_spacing,
-            Vp_max=vp_max,
-            vel_vec=vel_vec,
-            Ve_min=ve_min,
-            custom_current=custom_current,
-            empty=empty,
-            vessel_length=vessel_length
-        )
-
-        # 4) Salvataggio cache
-        g = save_namoa_graph(
-            grafo=grafo,
-            cell_to_xy=cell_to_xy,
-            currents=currents,
-            edge_data=edge_data,
-            time=bucket_time,
-            bbox=bbox,
-            dataset_hash=dataset_hash,
-            vessel_signature=vessel_signature,
-            fake_data=fake_data,
-            tollerance_seconds=T
-        )
+        g = _build_and_cache_graph(ignore_land_mask=False)
+        if g is None:
+            print("[OPTIMIZE][WARN] Grafo non navigabile al primo tentativo, retry con fallback.")
+            g = _build_and_cache_graph(ignore_land_mask=True)
+            if g is None:
+                raise RuntimeError("Impossibile generare un grafo navigabile anche con fallback")
 
         print("[OPTIMIZE] Graph generated and cached.")
+    else:
+        cached_navigable = _count_navigable_cells(g.grafo)
+        if cached_navigable == 0:
+            print("[OPTIMIZE][WARN] Cached graph non navigabile, rigenerazione in corso...")
+            g = _build_and_cache_graph(ignore_land_mask=True)
+            if g is None:
+                raise RuntimeError("Cached graph non navigabile e rebuild fallita")
     
-    start_cell, goal_cell = find_start_goal_cells(
-        grafo=g.grafo,
-        cell_to_xy=g.cell_to_xy,
-        bbox=bbox,
-        grid_spacing=grid_spacing,
-        start_lat=start_lat,
-        start_lon=start_lon,
-        goal_lat=goal_lat,
-        goal_lon=goal_lon
-    )
+    try:
+        start_cell, goal_cell = find_start_goal_cells(
+            grafo=g.grafo,
+            cell_to_xy=g.cell_to_xy,
+            bbox=bbox,
+            grid_spacing=grid_spacing,
+            start_lat=start_lat,
+            start_lon=start_lon,
+            goal_lat=goal_lat,
+            goal_lon=goal_lon
+        )
+    except RuntimeError as exc:
+        if "Nessuna cella navigabile nel grafo" not in str(exc):
+            raise
+        print("[OPTIMIZE][WARN] Nessuna cella navigabile da find_start_goal_cells, retry fallback...")
+        g_retry = _build_and_cache_graph(ignore_land_mask=True)
+        if g_retry is None:
+            raise
+        g = g_retry
+        start_cell, goal_cell = find_start_goal_cells(
+            grafo=g.grafo,
+            cell_to_xy=g.cell_to_xy,
+            bbox=bbox,
+            grid_spacing=grid_spacing,
+            start_lat=start_lat,
+            start_lon=start_lon,
+            goal_lat=goal_lat,
+            goal_lon=goal_lon
+        )
 
     grafo = g.grafo
     cell_to_xy = g.cell_to_xy
@@ -386,7 +450,7 @@ def optimize_route(
 
 
 
-def build_graph_from_grib(ds, time):
+def build_graph_from_grib(ds, time, ignore_land_mask: bool = False):
     ''' 
     Costruzione degli archi (edges) del grafo:
     Per ogni nodo (i, j) consideriamo tutti i vicini ortogonali e diagonali (8 direzioni):
@@ -438,7 +502,7 @@ def build_graph_from_grib(ds, time):
             edges = []
 
             # 👉 se il nodo è terra: tutti archi a peso infinito
-            if not is_point_water(lat_c, lon_c):
+            if (not ignore_land_mask) and (not is_point_water(lat_c, lon_c)):
                 grafo[(i, j)] = [((i, j), float("inf"))]  # self-loop "bloccato"
                 continue
 
@@ -564,12 +628,13 @@ def is_point_water(lat: float, lon: float, precision: int = 3) -> bool:
         resp = requests.get(url, timeout=5)
         if resp.status_code == 200:
             data = resp.json()
-            is_water = data.get("isWater", False)
+            is_water = bool(data.get("isWater", True))
         else:
-            is_water = False
+            print(f"[⚠️] is-on-water status {resp.status_code} per ({lat_r}, {lon_r}) -> fallback acqua")
+            is_water = True
     except Exception as e:
-        print(f"[⚠️] Errore API is-on-water per ({lat_r}, {lon_r}): {e}")
-        is_water = False
+        print(f"[⚠️] Errore API is-on-water per ({lat_r}, {lon_r}): {e} -> fallback acqua")
+        is_water = True
 
     # 5️⃣ Aggiorna cache in RAM e salva su file
     _water_cache[key] = is_water

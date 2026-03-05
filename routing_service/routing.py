@@ -249,6 +249,7 @@ def build_double_weighted_graph_NAMOA(dataset, dataset_wave, time, bbox,
     - Questa funzione NON esegue routing: prepara solo la struttura dati.
     """
     print("Costruzione grafo pesato per NAMOA*...vess length", vessel_length)
+    print(f"[NAMOA] vel_vec={vel_vec}, Vp_max={Vp_max}, Ve_min={Ve_min}, empty={empty}")
     
 
     sw_x, sw_y = latlon_to_xy(bbox["minimum_latitude"], bbox["minimum_longitude"])
@@ -264,6 +265,11 @@ def build_double_weighted_graph_NAMOA(dataset, dataset_wave, time, bbox,
     # 🔹 Caso nuovo: usiamo grafo e nodes costruiti con build_graph_from_grib
     grafo_pesato = {}
 
+    skipped_blocked = 0
+    processed_cells = 0
+    successful_edges = 0
+    failed_edges = 0
+
     for (i, j), edges in grafo.items():
         # nodes[(i,j)] contiene (lat, lon) → converto in metri (x,y)
         lat, lon = nodes[(i, j)]
@@ -271,6 +277,15 @@ def build_double_weighted_graph_NAMOA(dataset, dataset_wave, time, bbox,
         cell_to_xy[(i, j)] = (x, y)
         currents[(i, j)] = None  # correnti per-archi, non per-nodo
         grafo_pesato[(i, j)] = []
+
+        # Skip nodi bloccati (self-loop terra dal grafo base)
+        if len(edges) == 1 and len(edges[0]) == 2:
+            first_edge = edges[0]
+            if first_edge[0] == (i, j) and first_edge[1] == float("inf"):
+                skipped_blocked += 1
+                continue
+
+        processed_cells += 1
 
         for (ni, nj), Vc in edges:
             Vc = np.array(Vc, dtype=float)
@@ -312,6 +327,7 @@ def build_double_weighted_graph_NAMOA(dataset, dataset_wave, time, bbox,
 
                     # Variante Tempo: aggiungi arco con t_min e Vp_vec
                     grafo_pesato[(i, j)].append(((ni, nj), t_min,  comfort, f"vel={Vp_test:.2f}"))  # arco per Tempo
+                    successful_edges += 1
 
                     # Variante Consumo: aggiungi arco con Vp_mod e Vp_vec_min_costo
                     # grafo_pesato[(i, j)].append(((ni, nj), t_consumo, np.sqrt(Vp_vec_min_costo[0]**2 + Vp_vec_min_costo[1]**2), "consumo"))  # arco per Consumo
@@ -331,12 +347,23 @@ def build_double_weighted_graph_NAMOA(dataset, dataset_wave, time, bbox,
 
 
 
-                except Exception:
+                except Exception as exc:
+                    # Log only first N failures to avoid spamming
+                    if not hasattr(build_double_weighted_graph_NAMOA, '_logged_failures'):
+                        build_double_weighted_graph_NAMOA._logged_failures = 0
+                    if build_double_weighted_graph_NAMOA._logged_failures < 3:
+                        print(f"[NAMOA][DEBUG] calcola_tempo_minimo failed: {exc} | Vc={Vc} Vp_test={Vp_test}")
+                        build_double_weighted_graph_NAMOA._logged_failures += 1
                     grafo_pesato[(i, j)].append(((ni, nj), float("inf"), float("inf")))
                     edge_data[((i, j), (ni, nj))] = {"Pv": None, "Vref": None}
+                    failed_edges += 1
 
+    # Reset failure counter for next call
+    build_double_weighted_graph_NAMOA._logged_failures = 0
+    
     # usa il grafo pesato al posto di quello con pesi (uo, vo)
     grafo = grafo_pesato
+    print(f"[NAMOA GRAPH] processed={processed_cells}, skipped_blocked={skipped_blocked}, total_cells={len(grafo)}, edges_ok={successful_edges}, edges_fail={failed_edges}")
     # print("edge data:", edge_data)
     # print("Grafo costruito con NAMOA*: ", grafo)
 
@@ -487,9 +514,16 @@ def calcola_comfort(Ve, Pv, wave_point, vessel_length):
     #print("Calcolo comfort con Ve:", Ve, "Pv:", Pv)
 
     # --- estrazione variabili onda ---
-    Hs   = float(wave_point["VHM0"].values)
-    Tp   = float(wave_point["VTPK"].values)
-    Mdir = math.radians(float(wave_point["VMDR"].values))  # porto in radianti
+    # Usa nomi variabili con suffisso _WW (Wind Waves) dal dataset Copernicus
+    Hs   = float(wave_point["VHM0_WW"].values)
+    Tp   = float(wave_point["VTM01_WW"].values)  # period medio onde (VTM01_WW)
+    Mdir_deg = float(wave_point["VMDR_WW"].values)
+
+    # se manca il dato (NaN) → comfort nullo
+    if math.isnan(Hs) or math.isnan(Tp) or math.isnan(Mdir_deg):
+        return 0.0
+
+    Mdir = math.radians(Mdir_deg)  # porto in radianti
 
     # se manca il dato → comfort nullo
     if Tp <= 0 or Hs < 0:
