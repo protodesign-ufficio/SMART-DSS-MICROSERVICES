@@ -154,6 +154,48 @@ def lista_componenti_by_vascello(vascello_id: str):
         conn.close()
 
 
+@router.get(
+    "/componente/by_mmsi/{mmsi}",
+    response_model=List[Componente],
+    summary="Elenco componenti per MMSI vascello",
+)
+def lista_componenti_by_mmsi(mmsi: str):
+    if delegation_enabled():
+        try:
+            return get_json(f"/internal/componente/by_mmsi/{mmsi}")
+        except AnagraficaDelegationError as exc:
+            _handle_anagrafica_fallback(exc)
+
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT c.id, c.vascello_id, c.nome_componente, c.sottosistema, c.ore_utilizzo_totali, c.soglia_manutenzione, c.modello_guasto_json
+            FROM componente c
+            JOIN vascello v ON v.id = c.vascello_id
+            WHERE v.mmsi = %s
+            ORDER BY c.nome_componente;
+            """,
+            (mmsi,),
+        )
+        rows = cur.fetchall()
+        return [
+            {
+                "id": r[0],
+                "vascello_id": str(r[1]) if r[1] else None,
+                "nome_componente": r[2],
+                "sottosistema": r[3],
+                "ore_utilizzo_totali": float(r[4]) if r[4] is not None else None,
+                "soglia_manutenzione": float(r[5]) if r[5] is not None else None,
+                "modello_guasto_json": r[6],
+            }
+            for r in rows
+        ]
+    finally:
+        conn.close()
+
+
 @router.post(
     "/componente/modifica",
     response_model=Componente,
