@@ -144,10 +144,7 @@ Se un piano è presente su file ma non ha assegnazioni in questi stati, viene es
   """,
   responses={
     200: {
-      "description": "Lista delle simulazioni schedulate filtrate per assegnazioni PIANIFICATA/IN_CORSO"
-    },
-    404: {
-      "description": "Nessun file trovato o nessuna simulazione con assegnazioni PIANIFICATA/IN_CORSO"
+      "description": "Lista delle simulazioni schedulate filtrate per assegnazioni PIANIFICATA/IN_CORSO (lista vuota se non presenti)"
     }
   }
 )
@@ -156,7 +153,7 @@ def get_schedulate_simulations(piano_id: str = None):
   pattern = f"simulazioni_schedulate_{piano_id}.json" if piano_id else "simulazioni_schedulate_*.json"
   files = glob.glob(os.path.join(data_dir, pattern))
   if not files:
-    raise HTTPException(status_code=404, detail="Nessun file di simulazioni schedulate trovato")
+    return []
 
   file_contents = []
   for file_path in files:
@@ -170,7 +167,7 @@ def get_schedulate_simulations(piano_id: str = None):
 
   candidates = [item for item in file_contents if isinstance(item, dict) and item.get("piano_id")]
   if not candidates:
-    raise HTTPException(status_code=404, detail="Nessuna simulazione valida trovata")
+    return []
 
   results = []
   for item in candidates:
@@ -193,9 +190,6 @@ def get_schedulate_simulations(piano_id: str = None):
     results.append(enriched)
 
   if not results:
-    raise HTTPException(
-      status_code=404,
-      detail="Nessuna simulazione schedulata con assegnazioni in stato PIANIFICATA o IN_CORSO"
-    )
+    return []
 
   return results

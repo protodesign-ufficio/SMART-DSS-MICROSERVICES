@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import (
-    porto, tratta, corsa, vascello, percorso,
+    porto, tratta, corsa, vascello, componente, percorso,
     pianificazione, piano_operativo, simulazione, config as config_router,
     assegnazione, deadhead, replanning, allarme, weather
 )
@@ -226,6 +226,7 @@ app.include_router(porto.router)
 app.include_router(tratta.router)
 app.include_router(corsa.router)
 app.include_router(vascello.router)
+app.include_router(componente.router)
 app.include_router(percorso.router)
 app.include_router(pianificazione.router)
 app.include_router(assegnazione.router)

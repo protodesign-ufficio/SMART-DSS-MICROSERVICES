@@ -24,6 +24,17 @@ Anagrafica completa dei vascelli con caratteristiche tecniche e operative:
 *Supporta:* ricerca per MMSI, recupero percorso attivo, immagine nave."""
     },
     {
+        "name": "Componenti",
+        "description": """**Gestione componenti di bordo**
+
+Anagrafica dei componenti associabili ai vascelli:
+- Riferimento opzionale al vascello proprietario
+- Dati di utilizzo cumulativo e soglia manutentiva
+- Parametri modello guasto in JSONB per manutenzione predittiva
+
+*Operazioni disponibili:* creazione e modifica."""
+    },
+    {
         "name": "Tratte",
         "description": """**Gestione rotte geografiche**
         

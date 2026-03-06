@@ -547,6 +547,163 @@ def elimina_vascello(data: dict):
         conn.close()
 
 
+@app.post("/internal/componente/crea")
+def crea_componente(data: dict):
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            INSERT INTO componente (
+                id,
+                vascello_id,
+                nome_componente,
+                sottosistema,
+                ore_utilizzo_totali,
+                soglia_manutenzione,
+                modello_guasto_json
+            )
+            VALUES (gen_random_uuid(), %s, %s, %s, %s, %s, %s)
+            RETURNING id, vascello_id, nome_componente, sottosistema, ore_utilizzo_totali, soglia_manutenzione, modello_guasto_json;
+        """, (
+            data.get("vascello_id"),
+            data.get("nome_componente"),
+            data.get("sottosistema"),
+            data.get("ore_utilizzo_totali"),
+            data.get("soglia_manutenzione"),
+            json.dumps(data.get("modello_guasto_json")) if data.get("modello_guasto_json") is not None else None,
+        ))
+        row = cur.fetchone()
+        conn.commit()
+        return {
+            "id": row[0],
+            "vascello_id": str(row[1]) if row[1] else None,
+            "nome_componente": row[2],
+            "sottosistema": row[3],
+            "ore_utilizzo_totali": float(row[4]) if row[4] is not None else None,
+            "soglia_manutenzione": float(row[5]) if row[5] is not None else None,
+            "modello_guasto_json": row[6],
+        }
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.get("/internal/componente/lista")
+def lista_componenti():
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT id, vascello_id, nome_componente, sottosistema, ore_utilizzo_totali, soglia_manutenzione, modello_guasto_json
+            FROM componente
+            ORDER BY nome_componente;
+        """)
+        rows = cur.fetchall()
+        return [
+            {
+                "id": r[0],
+                "vascello_id": str(r[1]) if r[1] else None,
+                "nome_componente": r[2],
+                "sottosistema": r[3],
+                "ore_utilizzo_totali": float(r[4]) if r[4] is not None else None,
+                "soglia_manutenzione": float(r[5]) if r[5] is not None else None,
+                "modello_guasto_json": r[6],
+            }
+            for r in rows
+        ]
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.get("/internal/componente/{vascello_id}")
+def lista_componenti_by_vascello(vascello_id: str):
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT id, vascello_id, nome_componente, sottosistema, ore_utilizzo_totali, soglia_manutenzione, modello_guasto_json
+            FROM componente
+            WHERE vascello_id = %s
+            ORDER BY nome_componente;
+        """, (vascello_id,))
+        rows = cur.fetchall()
+        return [
+            {
+                "id": r[0],
+                "vascello_id": str(r[1]) if r[1] else None,
+                "nome_componente": r[2],
+                "sottosistema": r[3],
+                "ore_utilizzo_totali": float(r[4]) if r[4] is not None else None,
+                "soglia_manutenzione": float(r[5]) if r[5] is not None else None,
+                "modello_guasto_json": r[6],
+            }
+            for r in rows
+        ]
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.post("/internal/componente/modifica")
+def modifica_componente(data: dict):
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            UPDATE componente
+            SET
+                vascello_id = %s,
+                nome_componente = %s,
+                sottosistema = %s,
+                ore_utilizzo_totali = %s,
+                soglia_manutenzione = %s,
+                modello_guasto_json = %s
+            WHERE id = %s
+            RETURNING id, vascello_id, nome_componente, sottosistema, ore_utilizzo_totali, soglia_manutenzione, modello_guasto_json;
+        """, (
+            data.get("vascello_id"),
+            data.get("nome_componente"),
+            data.get("sottosistema"),
+            data.get("ore_utilizzo_totali"),
+            data.get("soglia_manutenzione"),
+            json.dumps(data.get("modello_guasto_json")) if data.get("modello_guasto_json") is not None else None,
+            data.get("id"),
+        ))
+        row = cur.fetchone()
+        conn.commit()
+        if row is None:
+            raise HTTPException(404, "Componente non trovato")
+        return {
+            "id": row[0],
+            "vascello_id": str(row[1]) if row[1] else None,
+            "nome_componente": row[2],
+            "sottosistema": row[3],
+            "ore_utilizzo_totali": float(row[4]) if row[4] is not None else None,
+            "soglia_manutenzione": float(row[5]) if row[5] is not None else None,
+            "modello_guasto_json": row[6],
+        }
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.post("/internal/componente/elimina")
+def elimina_componente(data: dict):
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("DELETE FROM componente WHERE id = %s RETURNING id;", (data.get("id"),))
+        row = cur.fetchone()
+        conn.commit()
+        if row is None:
+            raise HTTPException(404, "Componente non trovato")
+        return {"id": data.get("id"), "esito": "eliminato"}
+    finally:
+        cur.close()
+        conn.close()
+
+
 @app.get("/internal/vascello/{mmsi}/image")
 def get_vascello_image(mmsi: str):
     conn = get_connection()
