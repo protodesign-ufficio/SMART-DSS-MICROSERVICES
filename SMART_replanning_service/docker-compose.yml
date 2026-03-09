@@ -11,6 +11,7 @@ services:
       REPLANNING_SERVICE_PORT: "8001"
       KAFKA_BOOTSTRAP_SERVERS: "host.docker.internal:9092"
       KAFKA_ANALYTICS_TOPIC: "analytics_ais.raw"
+      KAFKA_TOPIC_NOTIFICATIONS: "notifications"
       KAFKA_GROUP_ID: "replanning-service-group"
       REPLANNING_THETA_MIN: "10"
       REPLANNING_THETA_CRITICAL_MIN: "30"

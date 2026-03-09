@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from config import (
     KAFKA_BOOTSTRAP_SERVERS,
     KAFKA_TOPIC_ANALYTICS,
+    KAFKA_TOPIC_NOTIFICATIONS,
     REPLANNING_COOLDOWN_MINUTES,
     REPLANNING_FREEZE_WINDOW_MINUTES,
     REPLANNING_HORIZON_MINUTES,
@@ -520,6 +521,33 @@ async def apply_cooldown_guard(
         return True, motivo, False
 
 
+async def publish_replanning_notification(motivo: Optional[str], piano_id: str) -> None:
+    payload = {
+        "msg_type": "replanning",
+        "piano_id": piano_id,
+        "motivo": motivo or "TRIGGER_REPLANNING",
+    }
+    try:
+        await broker.publish(payload, KAFKA_TOPIC_NOTIFICATIONS)
+        logger.info(
+            "Notifica replanning pubblicata",
+            extra={
+                "topic": KAFKA_TOPIC_NOTIFICATIONS,
+                "piano_id": payload["piano_id"],
+                "motivo": payload["motivo"],
+            },
+        )
+    except Exception as exc:  # pragma: no cover
+        logger.exception(
+            "Errore pubblicazione notifica replanning",
+            extra={
+                "topic": KAFKA_TOPIC_NOTIFICATIONS,
+                "piano_id": payload["piano_id"],
+                "error": str(exc),
+            },
+        )
+
+
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
@@ -598,6 +626,9 @@ async def check_replanning(data: ReplanningCheckInput):
         now,
         REPLANNING_COOLDOWN_MINUTES,
     )
+
+    if trigger:
+        await publish_replanning_notification(motivo, data.piano.id)
 
     elapsed_ms = round((time.perf_counter() - start_time) * 1000, 2)
     logger.info(

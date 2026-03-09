@@ -21,6 +21,7 @@ SERVICE_HOST = os.getenv("REPLANNING_SERVICE_HOST", "0.0.0.0")
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 KAFKA_TOPIC = os.getenv("KAFKA_REPLANNING_TOPIC", "vessel-positions")
 KAFKA_TOPIC_ANALYTICS = os.getenv("KAFKA_ANALYTICS_TOPIC", "analytics_ais.raw")
+KAFKA_TOPIC_NOTIFICATIONS = os.getenv("KAFKA_TOPIC_NOTIFICATIONS", "notifications")
 KAFKA_GROUP_ID = os.getenv("KAFKA_GROUP_ID", "replanning-service-group")
 
 # Parametri trigger replanning
