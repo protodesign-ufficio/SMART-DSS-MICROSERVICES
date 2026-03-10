@@ -7,33 +7,216 @@ class ServiceConfig(BaseModel):
     """Configurazione runtime del servizio API Gateway."""
     cache_delta_minutes: int = Field(
         120,
-        description="Durata validità cache ottimizzazione in minuti",
+        description=(
+            "Numero di minuti per cui il risultato di un'ottimizzazione weather routing è "
+            "considerato valido in cache. Se l'ultima ottimizzazione è avvenuta entro questa "
+            "finestra, il risultato viene restituito dalla cache senza ricalcolo, "
+            "risparmiando latenza e risorse computazionali."
+        ),
         ge=1,
         le=1440,
         example=120
     )
     replanning_check_interval_seconds: int = Field(
         300,
-        description="Intervallo in secondi tra due cicli automatici di check replanning",
+        description=(
+            "Cadenza in secondi del job periodico che verifica automaticamente se il piano "
+            "operativo attivo necessita di replanning. A ogni ciclo vengono valutati ritardi, "
+            "deviazioni e tutte le soglie configurate. Valori bassi aumentano la reattività "
+            "ma incrementano il carico computazionale sul servizio di replanning."
+        ),
         ge=5,
         le=86400,
         example=300
     )
+    replanning_theta_min: float = Field(
+        10.0,
+        description=(
+            "Soglia di ritardo minimo in minuti (θ_min). Una corsa è conteggiata come "
+            "'in ritardo' quando il suo ritardo supera questo valore. Il contatore M "
+            "(confrontato con max_late) viene incrementato per ogni corsa con ritardo "
+            "> theta_min nell'orizzonte di analisi."
+        ),
+        ge=0,
+    )
+    replanning_theta_critical_min: float = Field(
+        30.0,
+        description=(
+            "Soglia di ritardo critico in minuti (θ_critical), necessariamente più alta di "
+            "theta_min. Una corsa è classificata come 'in ritardo critico' quando supera "
+            "questo valore. Il contatore M_c (confrontato con max_critical) viene "
+            "incrementato per ogni corsa con ritardo > theta_critical_min."
+        ),
+        ge=0,
+    )
+    replanning_max_late: int = Field(
+        2,
+        description=(
+            "Numero massimo tollerato di corse in ritardo (M, ritardo > theta_min) "
+            "nell'orizzonte temporale di analisi. Se il conteggio M supera questo valore "
+            "il trigger di replanning viene attivato e la notifica pubblicata su Kafka."
+        ),
+        ge=0,
+    )
+    replanning_max_critical: int = Field(
+        1,
+        description=(
+            "Numero massimo tollerato di corse in ritardo critico (M_c, ritardo > "
+            "theta_critical_min) nell'orizzonte temporale. Anche una sola corsa critica "
+            "oltre questa soglia attiva immediatamente il replanning, indipendentemente "
+            "dal valore di max_late."
+        ),
+        ge=0,
+    )
+    replanning_total_delay_max: float = Field(
+        60.0,
+        description=(
+            "Ritardo cumulativo massimo tollerato in minuti (D_tot_max): somma di tutti i "
+            "ritardi delle corse nell'orizzonte di analisi. Superato questo limite il "
+            "replanning viene attivato indipendentemente dai contatori M e M_c."
+        ),
+        ge=0,
+    )
+    replanning_single_delay_max: float = Field(
+        40.0,
+        description=(
+            "Ritardo massimo tollerato per una singola corsa in minuti (D_max). Se anche "
+            "solo una corsa supera questo valore il trigger di replanning scatta "
+            "immediatamente, indipendentemente dagli altri parametri e contatori."
+        ),
+        ge=0,
+    )
+    replanning_horizon_minutes: int = Field(
+        120,
+        description=(
+            "Ampiezza in minuti della finestra temporale futura analizzata a ogni check. "
+            "Solo le corse con partenza o arrivo previsti entro questo orizzonte vengono "
+            "considerate nel calcolo dei ritardi e nei contatori M, M_c, D_tot e D_max."
+        ),
+        ge=1,
+    )
+    replanning_cooldown_minutes: int = Field(
+        30,
+        description=(
+            "Periodo di silenzio in minuti dopo un trigger di replanning, durante il quale "
+            "nuovi trigger non vengono generati né notificati su Kafka. Previene oscillazioni "
+            "e notifiche ripetute causate dallo stesso evento di ritardo persistente."
+        ),
+        ge=0,
+    )
+    replanning_freeze_window_minutes: int = Field(
+        15,
+        description=(
+            "Finestra temporale in minuti prima della partenza di una corsa durante la quale "
+            "le modifiche operative sono bloccate (freeze operativo). Le corse con partenza "
+            "imminente entro questa finestra vengono escluse dal replanning per evitare "
+            "interferenze con operazioni già avviate o in fase di boarding."
+        ),
+        ge=0,
+    )
 
 
 class ServiceConfigUpdate(BaseModel):
-    """Schema per l'aggiornamento della configurazione servizio."""
+    """Schema per l'aggiornamento parziale della configurazione runtime del servizio."""
     cache_delta_minutes: Optional[int] = Field(
         None,
-        description="Nuova durata cache in minuti",
+        description=(
+            "Nuova durata in minuti della cache dei risultati di ottimizzazione weather routing. "
+            "Se omesso il valore corrente rimane invariato."
+        ),
         ge=1,
         le=1440
     )
     replanning_check_interval_seconds: Optional[int] = Field(
         None,
-        description="Nuovo intervallo in secondi tra i check automatici di replanning",
+        description=(
+            "Nuova cadenza in secondi del job periodico di check replanning. "
+            "La modifica rischedula immediatamente il job con il nuovo intervallo. "
+            "Se omesso il valore corrente rimane invariato."
+        ),
         ge=5,
         le=86400
+    )
+    replanning_theta_min: Optional[float] = Field(
+        None,
+        description=(
+            "Nuova soglia di ritardo minimo in minuti (θ_min). "
+            "Abbassare il valore rende il sistema più sensibile ai ritardi lievi; "
+            "alzarlo ignora piccoli scostamenti dal piano. Se omesso rimane invariato."
+        ),
+        ge=0,
+    )
+    replanning_theta_critical_min: Optional[float] = Field(
+        None,
+        description=(
+            "Nuova soglia di ritardo critico in minuti (θ_critical). "
+            "Deve essere impostata a un valore maggiore di theta_min per una distinzione "
+            "significativa tra ritardo normale e critico. Se omesso rimane invariato."
+        ),
+        ge=0,
+    )
+    replanning_max_late: Optional[int] = Field(
+        None,
+        description=(
+            "Nuovo numero massimo tollerato di corse in ritardo (M > theta_min). "
+            "Ridurlo aumenta la sensibilità del sistema; portarlo a 0 attiva il replanning "
+            "al primo ritardo. Se omesso rimane invariato."
+        ),
+        ge=0,
+    )
+    replanning_max_critical: Optional[int] = Field(
+        None,
+        description=(
+            "Nuovo numero massimo tollerato di corse in ritardo critico (M_c > theta_critical_min). "
+            "Un valore di 0 attiva il replanning alla prima corsa critica rilevata. "
+            "Se omesso rimane invariato."
+        ),
+        ge=0,
+    )
+    replanning_total_delay_max: Optional[float] = Field(
+        None,
+        description=(
+            "Nuovo ritardo cumulativo massimo tollerato in minuti (D_tot_max). "
+            "Ridurlo rende il sistema più reattivo a ritardi distribuiti su più corse. "
+            "Se omesso rimane invariato."
+        ),
+        ge=0,
+    )
+    replanning_single_delay_max: Optional[float] = Field(
+        None,
+        description=(
+            "Nuovo ritardo massimo tollerato per una singola corsa in minuti (D_max). "
+            "Ridurlo protegge le corse singole con grandi ritardi anche se il totale è basso. "
+            "Se omesso rimane invariato."
+        ),
+        ge=0,
+    )
+    replanning_horizon_minutes: Optional[int] = Field(
+        None,
+        description=(
+            "Nuova ampiezza in minuti della finestra temporale futura analizzata. "
+            "Un orizzonte più lungo include più corse nell'analisi ma può diluire i segnali "
+            "di ritardo imminente. Se omesso rimane invariato."
+        ),
+        ge=1,
+    )
+    replanning_cooldown_minutes: Optional[int] = Field(
+        None,
+        description=(
+            "Nuovo periodo di silenzio in minuti dopo un trigger. "
+            "Un valore di 0 disabilita il cooldown: ogni ciclo può generare un nuovo trigger. "
+            "Se omesso rimane invariato."
+        ),
+        ge=0,
+    )
+    replanning_freeze_window_minutes: Optional[int] = Field(
+        None,
+        description=(
+            "Nuova finestra di freeze operativo in minuti prima della partenza. "
+            "Un valore di 0 disabilita il freeze: anche le corse imminenti vengono incluse "
+            "nell'analisi di replanning. Se omesso rimane invariato."
+        ),
+        ge=0,
     )
 
 

@@ -96,3 +96,12 @@ class TrattaModificaInput(BaseModel):
     id: str = Field(..., description="UUID della tratta da modificare")
     porto_partenza_id: str = Field(..., description="Nuovo UUID porto di partenza")
     porto_arrivo_id: str = Field(..., description="Nuovo UUID porto di arrivo")
+
+
+class TrattaDeleteInput(BaseModel):
+    """Schema per l'eliminazione di una tratta."""
+    id: str = Field(
+        ...,
+        description="UUID della tratta da eliminare",
+        example="550e8400-e29b-41d4-a716-446655440000"
+    )

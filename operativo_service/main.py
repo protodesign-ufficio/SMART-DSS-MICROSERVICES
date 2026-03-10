@@ -34,6 +34,20 @@ def _get_json(base_url: str, path: str, timeout: float = 6.0):
         raise HTTPException(status_code=502, detail=f"Invalid internal response from {base_url}") from exc
 
 
+def _post_json(base_url: str, path: str, payload: dict, timeout: float = 6.0):
+    url = f"{base_url.rstrip('/')}{path}"
+    try:
+        response = requests.post(url, json=payload, timeout=timeout)
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=503, detail=f"Internal dependency unavailable: {base_url}") from exc
+    if response.status_code >= 400:
+        raise HTTPException(status_code=503, detail=f"Internal dependency error: {base_url}")
+    try:
+        return response.json()
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Invalid internal response from {base_url}") from exc
+
+
 def _tratta_nome(tratta_id: str) -> str | None:
     tratta = _get_json(ANAGRAFICA_SERVICE_URL, f"/internal/tratta/{tratta_id}")
     if not tratta:
@@ -664,18 +678,87 @@ def modifica_corsa(data: dict):
 
 @app.post("/internal/corsa/elimina")
 def elimina_corsa(data: dict):
+    corsa_id = data.get("id")
+    # Recupera gli ID dei percorsi associati alla corsa
+    percorso_ids = []
+    percorsi_data = _get_json(PERCORSI_SERVICE_URL, f"/internal/percorso/by_corsa/{corsa_id}")
+    if percorsi_data and isinstance(percorsi_data.get("percorsi"), list):
+        percorso_ids = [p["id"] for p in percorsi_data["percorsi"]]
+    # Elimina le assegnazioni che referenziano quei percorsi (piano_operativo rimane intatto)
+    if percorso_ids:
+        conn_a = get_connection()
+        cur_a = conn_a.cursor()
+        try:
+            cur_a.execute("DELETE FROM assegnazione WHERE percorso_id IN %s;", (tuple(percorso_ids),))
+            conn_a.commit()
+        finally:
+            cur_a.close()
+            conn_a.close()
+    # Elimina i percorsi nel servizio percorsi
+    try:
+        _post_json(PERCORSI_SERVICE_URL, "/internal/percorso/elimina_by_corsa", {"corsa_id": corsa_id})
+    except HTTPException:
+        pass
+    # Elimina la corsa
     conn = get_connection()
     cur = conn.cursor()
     try:
-        cur.execute("DELETE FROM corsa WHERE id = %s RETURNING id;", (data.get("id"),))
+        cur.execute("DELETE FROM corsa WHERE id = %s RETURNING id;", (corsa_id,))
         row = cur.fetchone()
         conn.commit()
         if row is None:
             raise HTTPException(404, "Corsa non trovata")
-        return {"id": data.get("id"), "esito": "eliminato"}
+        return {"id": corsa_id, "esito": "eliminato"}
     finally:
         cur.close()
         conn.close()
+
+
+@app.post("/internal/corsa/elimina_by_tratta")
+def elimina_corse_by_tratta(data: dict):
+    tratta_id = data.get("tratta_id")
+    if not tratta_id:
+        raise HTTPException(status_code=400, detail="tratta_id obbligatorio")
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT id FROM corsa WHERE tratta_id = %s;", (tratta_id,))
+        corsa_ids = [str(r[0]) for r in cur.fetchall()]
+    finally:
+        cur.close()
+        conn.close()
+    # Raccoglie tutti i percorso IDs per poter eliminare le assegnazioni
+    all_percorso_ids = []
+    for cid in corsa_ids:
+        percorsi_data = _get_json(PERCORSI_SERVICE_URL, f"/internal/percorso/by_corsa/{cid}")
+        if percorsi_data and isinstance(percorsi_data.get("percorsi"), list):
+            all_percorso_ids.extend(p["id"] for p in percorsi_data["percorsi"])
+    # Elimina le assegnazioni (piano_operativo rimane intatto)
+    if all_percorso_ids:
+        conn_a = get_connection()
+        cur_a = conn_a.cursor()
+        try:
+            cur_a.execute("DELETE FROM assegnazione WHERE percorso_id IN %s;", (tuple(all_percorso_ids),))
+            conn_a.commit()
+        finally:
+            cur_a.close()
+            conn_a.close()
+    # Elimina i percorsi nel servizio percorsi
+    for cid in corsa_ids:
+        try:
+            _post_json(PERCORSI_SERVICE_URL, "/internal/percorso/elimina_by_corsa", {"corsa_id": cid})
+        except HTTPException:
+            pass
+    # Elimina le corse
+    conn2 = get_connection()
+    cur2 = conn2.cursor()
+    try:
+        cur2.execute("DELETE FROM corsa WHERE tratta_id = %s;", (tratta_id,))
+        conn2.commit()
+        return {"tratta_id": tratta_id, "corse_eliminate": len(corsa_ids)}
+    finally:
+        cur2.close()
+        conn2.close()
 
 
 @app.post("/internal/piano/crea")

@@ -90,16 +90,26 @@ def update_kafka_settings(settings: KafkaSettingsInput):
 @router.get(
     "/config",
     response_model=ServiceConfig,
-    summary="Configurazione servizio",
+    summary="Leggi configurazione runtime del servizio",
     description="""
-Restituisce la configurazione runtime del servizio API Gateway.
+Restituisce l'intera configurazione runtime del servizio API Gateway così come è **attiva in questo momento**.
+Tutti i valori sono modificabili senza riavvio tramite `POST /config`.
 
-### Parametri
-- **cache_delta_minutes**: durata validità cache per risultati ottimizzazione (minuti)
-- **replanning_check_interval_seconds**: intervallo del check automatico replanning (secondi)
+### Parametri restituiti
 
-### Utilizzo
-La cache evita ricalcoli costosi quando i dati meteo non sono cambiati significativamente.
+| Campo | Default | Descrizione |
+|-------|---------|-------------|
+| `cache_delta_minutes` | 120 | Durata in minuti della cache risultati ottimizzazione weather routing. Scaduta la cache, il prossimo ciclo esegue un ricalcolo completo. |
+| `replanning_check_interval_seconds` | 300 | Cadenza in secondi del job periodico che verifica automaticamente se il piano operativo necessita di replanning. |
+| `replanning_theta_min` | 10.0 | Soglia θ_min (min): ritardo oltre cui una corsa è considerata *in ritardo*. Alimenta il contatore M. |
+| `replanning_theta_critical_min` | 30.0 | Soglia θ_critical (min): ritardo oltre cui una corsa è *critica*. Alimenta il contatore M_c. Deve essere > theta_min. |
+| `replanning_max_late` | 2 | Numero massimo di corse *in ritardo* (M > theta_min) tollerato nell'orizzonte prima di attivare il replanning. |
+| `replanning_max_critical` | 1 | Numero massimo di corse *critiche* (M_c > theta_critical_min) tollerato. Anche una singola corsa critica oltre soglia attiva il replanning. |
+| `replanning_total_delay_max` | 60.0 | Ritardo cumulativo massimo (D_tot, min): somma di tutti i ritardi nell'orizzonte. Superato questo valore il replanning scatta indipendentemente da M e M_c. |
+| `replanning_single_delay_max` | 40.0 | Ritardo massimo su una singola corsa (D_max, min). Se anche solo una corsa supera questo valore il replanning scatta immediatamente. |
+| `replanning_horizon_minutes` | 120 | Ampiezza in minuti della finestra temporale futura analizzata. Solo le corse con partenza/arrivo entro questo orizzonte vengono incluse nell'analisi. |
+| `replanning_cooldown_minutes` | 30 | Periodo di silenzio (min) dopo un trigger: nuovi trigger non vengono generati né notificati su Kafka per evitare oscillazioni. |
+| `replanning_freeze_window_minutes` | 15 | Finestra di freeze operativo (min) prima della partenza di una corsa. Le corse imminenti entro questa finestra sono escluse dal replanning. |
     """
 )
 def get_config():
@@ -109,20 +119,32 @@ def get_config():
 @router.post(
     "/config",
     response_model=ServiceConfig,
-    summary="Aggiorna configurazione servizio",
+    summary="Aggiorna configurazione runtime del servizio",
     description="""
-Modifica la configurazione runtime del servizio API Gateway.
+Modifica uno o più parametri della configurazione runtime del servizio API Gateway.
+Tutti i campi sono **opzionali**: invia solo quelli che vuoi cambiare, gli altri restano invariati.
+Le modifiche sono applicate **immediatamente** senza riavvio del servizio (hot reload).
 
 ### Parametri modificabili
-- **cache_delta_minutes**: nuova durata cache (1-1440 minuti)
-- **replanning_check_interval_seconds**: nuovo intervallo check automatico replanning (5-86400 secondi)
 
-### Hot Reload
-Le modifiche sono applicate immediatamente senza riavvio.
+| Campo | Range | Effetto della modifica |
+|-------|-------|------------------------|
+| `cache_delta_minutes` | 1–1440 min | Durata cache ottimizzazione. Ridurre = risultati più freschi ma più ricalcoli. |
+| `replanning_check_interval_seconds` | 5–86400 sec | Cadenza del job periodico; la modifica rischedula il job immediatamente. |
+| `replanning_theta_min` | ≥ 0 min | Soglia θ_min ritardo minimo. Abbassare = più corse contate come *in ritardo*. |
+| `replanning_theta_critical_min` | ≥ 0 min | Soglia θ_critical ritardo critico. Impostare sempre > theta_min. |
+| `replanning_max_late` | ≥ 0 | Tolleranza corse in ritardo (M). 0 = trigger al primo ritardo rilevato. |
+| `replanning_max_critical` | ≥ 0 | Tolleranza corse critiche (M_c). 0 = trigger alla prima corsa critica. |
+| `replanning_total_delay_max` | ≥ 0 min | Soglia ritardo cumulativo (D_tot). Ridurre = più sensibile a ritardi distribuiti. |
+| `replanning_single_delay_max` | ≥ 0 min | Soglia ritardo singola corsa (D_max). Ridurre = più sensibile ai picchi di ritardo. |
+| `replanning_horizon_minutes` | ≥ 1 min | Orizzonte analisi. Aumentare = più corse analizzate ma segnali più diluiti. |
+| `replanning_cooldown_minutes` | ≥ 0 min | Cooldown post-trigger. 0 = disabilita il cooldown, ogni ciclo può generare trigger. |
+| `replanning_freeze_window_minutes` | ≥ 0 min | Freeze operativo pre-partenza. 0 = nessun freeze, anche le corse imminenti sono incluse. |
 
-### Note
-- Valori bassi = dati più freschi ma più chiamate all'ottimizzatore
-- Valori alti = meno chiamate ma possibile uso dati obsoleti
+### Note operative
+- I parametri di replanning vengono inoltrati al microservizio a ogni chiamata `POST /replanning/check`.
+- La modifica di `replanning_check_interval_seconds` rischedula il job automatico senza perdere il ciclo corrente.
+- La cache ottimizzazione è separata dai parametri replanning e non viene invalidata dalla modifica di questi ultimi.
     """
 )
 def update_config(data: ServiceConfigUpdate):
@@ -133,5 +155,24 @@ def update_config(data: ServiceConfigUpdate):
     if data.replanning_check_interval_seconds is not None:
         SERVICE_CONFIG.replanning_check_interval_seconds = data.replanning_check_interval_seconds
         ensure_periodic_replanning_job()
+
+    if data.replanning_theta_min is not None:
+        SERVICE_CONFIG.replanning_theta_min = data.replanning_theta_min
+    if data.replanning_theta_critical_min is not None:
+        SERVICE_CONFIG.replanning_theta_critical_min = data.replanning_theta_critical_min
+    if data.replanning_max_late is not None:
+        SERVICE_CONFIG.replanning_max_late = data.replanning_max_late
+    if data.replanning_max_critical is not None:
+        SERVICE_CONFIG.replanning_max_critical = data.replanning_max_critical
+    if data.replanning_total_delay_max is not None:
+        SERVICE_CONFIG.replanning_total_delay_max = data.replanning_total_delay_max
+    if data.replanning_single_delay_max is not None:
+        SERVICE_CONFIG.replanning_single_delay_max = data.replanning_single_delay_max
+    if data.replanning_horizon_minutes is not None:
+        SERVICE_CONFIG.replanning_horizon_minutes = data.replanning_horizon_minutes
+    if data.replanning_cooldown_minutes is not None:
+        SERVICE_CONFIG.replanning_cooldown_minutes = data.replanning_cooldown_minutes
+    if data.replanning_freeze_window_minutes is not None:
+        SERVICE_CONFIG.replanning_freeze_window_minutes = data.replanning_freeze_window_minutes
 
     return ServiceConfig(**SERVICE_CONFIG.model_dump())

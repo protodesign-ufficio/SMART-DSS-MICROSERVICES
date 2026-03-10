@@ -8,7 +8,7 @@ from app.core.forecast_client import delegation_enabled as forecast_delegation_e
 from app.core.config import ENABLE_FORECAST_FALLBACK, ENABLE_OPERATIVO_FALLBACK
 from app.models.corsa import (
     PrevisioneRequest, PrevisioneResponse, CorsaInput, CorsaCreated,
-    OrariResponse, CorsaWithPrevisione, CorsaGiornoItem, DashboardCorsaItem, CorsaAPI
+    OrariResponse, CorsaWithPrevisione, CorsaGiornoItem, DashboardCorsaItem, CorsaAPI, CorsaDeleteInput
 )
 from app.services import previsione_service, corsa_service
 
@@ -530,18 +530,22 @@ def modifica_corsa(data: dict):
     "/corsa/elimina",
     summary="Elimina corsa",
     description="""
-Elimina definitivamente una corsa dal sistema.
+Elimina definitivamente una corsa dal sistema con eliminazione **a cascata**.
+
+### Comportamento a cascata
+L'operazione elimina in sequenza:
+1. Tutte le **assegnazioni** legate ai percorsi della corsa
+2. Tutti i **percorsi** associati alla corsa
+3. La **corsa** stessa
+
+I **piani operativi** non vengono eliminati: rimangono nel sistema privi delle assegnazioni rimosse.
+
+In modalità monolitica le eliminazioni avvengono in una singola transazione DB.
+In modalità microservizi viene coordinato il cascade tra `operativo_service` → `percorsi_service`.
 
 ### Attenzione
 - L'eliminazione è **irreversibile**
-- Vengono eliminati anche:
-  - Previsioni domanda associate
-  - Percorsi calcolati per la corsa
-  - Assegnazioni pianificate (se non IN_CORSO)
-
-### Prerequisiti
-- Nessuna assegnazione con stato `IN_CORSO`
-- Corsa non deve essere in esecuzione
+- Non è necessario eliminare manualmente i percorsi o le assegnazioni prima di chiamare questo endpoint
 
 ### Input
 ```json
@@ -554,11 +558,12 @@ Elimina definitivamente una corsa dal sistema.
         409: {"description": "Impossibile eliminare: assegnazione in corso"}
     }
 )
-def elimina_corsa(data: dict):
+def elimina_corsa(data: CorsaDeleteInput):
     if operativo_delegation_enabled():
         try:
-            return operativo_post_json("/internal/corsa/elimina", data)
+            # In microservices mode this operation can take longer due to cascades across services.
+            return operativo_post_json("/internal/corsa/elimina", data.model_dump(), timeout=30.0)
         except OperativoDelegationError as exc:
             _handle_operativo_fallback(exc)
 
-    return corsa_service.elimina_corsa(data)
+    return corsa_service.elimina_corsa(data.model_dump())

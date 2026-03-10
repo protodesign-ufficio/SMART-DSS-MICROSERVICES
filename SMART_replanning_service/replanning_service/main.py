@@ -170,9 +170,23 @@ class ReplanningCheckInput(BaseModel):
         corsa: "ReplanningCheckInput.CorsaInput"
         #deadhead_min: float = Field(default=0, ge=0, examples=[0])
 
+    class ConfigReplanningInput(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
+        theta_min: float = Field(..., ge=0)
+        theta_critical_min: float = Field(..., ge=0)
+        max_late: int = Field(..., ge=0)
+        max_critical: int = Field(..., ge=0)
+        total_delay_max: float = Field(..., ge=0)
+        single_delay_max: float = Field(..., ge=0)
+        horizon_minutes: int = Field(..., ge=1)
+        cooldown_minutes: int = Field(..., ge=0)
+        freeze_window_minutes: int = Field(..., ge=0)
+
     piano: PianoInput
     assegnazioni_per_vascello: Dict[str, List[AssegnazioneInput]]
     mmsi_per_vascello: Dict[str, str]
+    config_replanning: Optional[ConfigReplanningInput] = None
 
     @model_validator(mode="after")
     def validate_payload_consistency(self):
@@ -557,14 +571,17 @@ def health_check():
 async def check_replanning(data: ReplanningCheckInput):
     start_time = time.perf_counter()
     now = datetime.now(ROME_TZ)
-    theta = REPLANNING_THETA_MIN
-    Theta = REPLANNING_THETA_CRITICAL_MIN
-    M = REPLANNING_MAX_LATE
-    M_c = REPLANNING_MAX_CRITICAL
-    D_tot_max = REPLANNING_TOTAL_DELAY_MAX
-    D_max_max = REPLANNING_SINGLE_DELAY_MAX
-    H_minuti = REPLANNING_HORIZON_MINUTES
-    freeze_window_minuti = REPLANNING_FREEZE_WINDOW_MINUTES
+    theta = data.config_replanning.theta_min if data.config_replanning else REPLANNING_THETA_MIN
+    Theta = data.config_replanning.theta_critical_min if data.config_replanning else REPLANNING_THETA_CRITICAL_MIN
+    M = data.config_replanning.max_late if data.config_replanning else REPLANNING_MAX_LATE
+    M_c = data.config_replanning.max_critical if data.config_replanning else REPLANNING_MAX_CRITICAL
+    D_tot_max = data.config_replanning.total_delay_max if data.config_replanning else REPLANNING_TOTAL_DELAY_MAX
+    D_max_max = data.config_replanning.single_delay_max if data.config_replanning else REPLANNING_SINGLE_DELAY_MAX
+    H_minuti = data.config_replanning.horizon_minutes if data.config_replanning else REPLANNING_HORIZON_MINUTES
+    freeze_window_minuti = (
+        data.config_replanning.freeze_window_minutes if data.config_replanning else REPLANNING_FREEZE_WINDOW_MINUTES
+    )
+    cooldown_minuti = data.config_replanning.cooldown_minutes if data.config_replanning else REPLANNING_COOLDOWN_MINUTES
 
     total_assegnazioni = sum(len(x) for x in data.assegnazioni_per_vascello.values())
     logger.info(
@@ -624,7 +641,7 @@ async def check_replanning(data: ReplanningCheckInput):
         trigger,
         motivo,
         now,
-        REPLANNING_COOLDOWN_MINUTES,
+        cooldown_minuti,
     )
 
     if trigger:

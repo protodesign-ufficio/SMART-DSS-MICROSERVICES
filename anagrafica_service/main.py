@@ -4,14 +4,30 @@ import uuid
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import Response
 import psycopg2
+import requests
 
 DB_CONN = os.getenv("ANAGRAFICA_DB_CONN", "dbname=anagrafica_db user=postgres password=admin host=localhost")
+OPERATIVO_SERVICE_URL = os.getenv("OPERATIVO_SERVICE_URL", "http://operativo:8072")
 
 app = FastAPI(title="Anagrafica Internal Service", version="0.1.0")
 
 
 def get_connection():
     return psycopg2.connect(DB_CONN)
+
+
+def _post_json(base_url: str, path: str, payload: dict, timeout: float = 6.0):
+    url = f"{base_url.rstrip('/')}{path}"
+    try:
+        response = requests.post(url, json=payload, timeout=timeout)
+    except requests.RequestException:
+        return None  # fallback silenzioso: il cascade è best-effort
+    if response.status_code >= 400:
+        return None
+    try:
+        return response.json()
+    except Exception:
+        return None
 
 
 @app.get("/health")
@@ -349,6 +365,8 @@ def modifica_tratta(data: dict):
 
 @app.post("/internal/tratta/elimina")
 def elimina_tratta(data: dict):
+    # cascade: elimina corse (e percorsi) nel servizio operativo
+    _post_json(OPERATIVO_SERVICE_URL, "/internal/corsa/elimina_by_tratta", {"tratta_id": data.get("id")})
     conn = get_connection()
     cur = conn.cursor()
     try:

@@ -5,7 +5,7 @@ from app.core.anagrafica_client import delegation_enabled, get_json, post_json, 
 from app.core.config import ENABLE_ANAGRAFICA_FALLBACK
 from app.models.tratta import (
     TrattaInputById, TrattaMultiInputById, TrattaCreated,
-    TrattaMultiCreated, TrattaListItem, TrattaDetail, TrattaModificaInput
+    TrattaMultiCreated, TrattaListItem, TrattaDetail, TrattaModificaInput, TrattaDeleteInput
 )
 import json
 import uuid
@@ -348,42 +348,63 @@ def modifica_tratta(data: TrattaModificaInput):
     "/tratta/elimina",
     summary="Elimina tratta",
     description="""
-Elimina definitivamente una tratta dal sistema.
+Elimina definitivamente una tratta dal sistema con eliminazione **a cascata**.
+
+### Comportamento a cascata
+L'operazione elimina in sequenza:
+1. Tutte le **assegnazioni** legate ai percorsi delle corse della tratta
+2. Tutti i **percorsi** associati alle corse della tratta
+3. Tutte le **corse** associate alla tratta
+4. La **tratta** stessa
+
+I **piani operativi** non vengono eliminati: rimangono nel sistema privi delle assegnazioni rimosse.
+
+In modalità monolitica le eliminazioni avvengono in una singola transazione DB.
+In modalità microservizi viene coordinato il cascade tra `anagrafica_service` → `operativo_service` → `percorsi_service`.
 
 ### Attenzione
 - L'eliminazione è **irreversibile**
-- Verificare che non esistano:
-  - Corse programmate sulla tratta
-  - Percorsi calcolati associati
-  - Piani operativi con riferimenti
+- Non è necessario eliminare manualmente corse, percorsi o assegnazioni prima di chiamare questo endpoint
 
 ### Input
 ```json
 {"id": "uuid-tratta"}
 ```
-
-### Prerequisiti consigliati
-- Archiviare o eliminare le corse associate
-- Verificare assenza di assegnazioni attive
     """,
     responses={
         200: {"description": "Tratta eliminata con successo", "content": {"application/json": {"example": {"id": "uuid", "esito": "eliminato"}}}},
         404: {"description": "Tratta non trovata - UUID non esistente"}
     }
 )
-def elimina_tratta(data: dict):
+def elimina_tratta(data: TrattaDeleteInput):
     if delegation_enabled():
         try:
-            return post_json("/internal/tratta/elimina", data)
+            # In microservices mode this operation can take longer due to cascades across services.
+            return post_json("/internal/tratta/elimina", data.model_dump(), timeout=30.0)
         except AnagraficaDelegationError as exc:
             _handle_anagrafica_fallback(exc)
 
     conn = get_connection(); cur = conn.cursor()
     try:
-        cur.execute("DELETE FROM tratta WHERE id = %s RETURNING id;", (data.get('id'),))
-        row = cur.fetchone(); conn.commit()
+        cur.execute(
+            "DELETE FROM assegnazione WHERE percorso_id IN (SELECT id FROM percorso WHERE id_corsa IN (SELECT id FROM corsa WHERE tratta_id = %s));",
+            (data.id,)
+        )
+        cur.execute(
+            "DELETE FROM percorso WHERE id_corsa IN (SELECT id FROM corsa WHERE tratta_id = %s);",
+            (data.id,)
+        )
+        cur.execute("DELETE FROM corsa WHERE tratta_id = %s;", (data.id,))
+        cur.execute("DELETE FROM tratta WHERE id = %s RETURNING id;", (data.id,))
+        row = cur.fetchone()
         if row is None:
+            conn.rollback()
             raise HTTPException(404, "Tratta non trovata")
-        return {"id": data.get('id'), "esito": "eliminato"}
+        conn.commit()
+        return {"id": data.id, "esito": "eliminato"}
+    except HTTPException:
+        raise
+    except Exception:
+        conn.rollback(); raise
     finally:
         cur.close(); conn.close()

@@ -71,7 +71,11 @@ class CorsaModificaInput(CorsaInputModifica):
 
 class CorsaDeleteInput(BaseModel):
     """Schema per l'eliminazione di una corsa."""
-    id: str = Field(..., description="UUID della corsa da eliminare")
+    id: str = Field(
+        ...,
+        description="UUID della corsa da eliminare",
+        example="550e8400-e29b-41d4-a716-446655440000"
+    )
 
 
 class CorsaBase(BaseModel):

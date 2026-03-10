@@ -12,7 +12,7 @@ from collections import defaultdict
 from pydantic import BaseModel, Field, ConfigDict, ValidationError
 from fastapi.encoders import jsonable_encoder
 
-from app.core.config import REPLANNING_SERVICE_URL, KAFKA_CONFIG
+from app.core.config import REPLANNING_SERVICE_URL, KAFKA_CONFIG, SERVICE_CONFIG
 from app.core.anagrafica_client import get_json as anagrafica_get_json, AnagraficaDelegationError
 from app.core.percorsi_client import get_json as percorsi_get_json, PercorsiDelegationError
 from app.core.operativo_client import get_json as operativo_get_json, OperativoDelegationError
@@ -293,6 +293,17 @@ def chiama_servizio_replanning(
         "piano": _build_piano_payload(piano),
         "assegnazioni_per_vascello": assegnazioni_pulite,
         "mmsi_per_vascello": mmsi_per_vascello,
+        "config_replanning": {
+            "theta_min": SERVICE_CONFIG.replanning_theta_min,
+            "theta_critical_min": SERVICE_CONFIG.replanning_theta_critical_min,
+            "max_late": SERVICE_CONFIG.replanning_max_late,
+            "max_critical": SERVICE_CONFIG.replanning_max_critical,
+            "total_delay_max": SERVICE_CONFIG.replanning_total_delay_max,
+            "single_delay_max": SERVICE_CONFIG.replanning_single_delay_max,
+            "horizon_minutes": SERVICE_CONFIG.replanning_horizon_minutes,
+            "cooldown_minutes": SERVICE_CONFIG.replanning_cooldown_minutes,
+            "freeze_window_minutes": SERVICE_CONFIG.replanning_freeze_window_minutes,
+        },
     }
     payload = jsonable_encoder(payload)
 

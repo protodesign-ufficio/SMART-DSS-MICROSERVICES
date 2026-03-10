@@ -280,10 +280,21 @@ def modifica_corsa(data: dict):
 def elimina_corsa(data: dict):
     conn = get_connection(); cur = conn.cursor()
     try:
+        cur.execute(
+            "DELETE FROM assegnazione WHERE percorso_id IN (SELECT id FROM percorso WHERE id_corsa = %s);",
+            (data.get('id'),)
+        )
+        cur.execute("DELETE FROM percorso WHERE id_corsa = %s;", (data.get('id'),))
         cur.execute("DELETE FROM corsa WHERE id = %s RETURNING id;", (data.get('id'),))
-        row = cur.fetchone(); conn.commit()
+        row = cur.fetchone()
         if row is None:
+            conn.rollback()
             raise HTTPException(404, "Corsa non trovata")
+        conn.commit()
         return {"id": data.get('id'), "esito": "eliminato"}
+    except HTTPException:
+        raise
+    except Exception:
+        conn.rollback(); raise
     finally:
         cur.close(); conn.close()

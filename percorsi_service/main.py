@@ -322,6 +322,23 @@ def get_percorsi_by_corsa(
         conn.close()
 
 
+@app.post("/internal/percorso/elimina_by_corsa")
+def elimina_percorsi_by_corsa(payload: dict):
+    corsa_id = payload.get("corsa_id")
+    if not corsa_id:
+        raise HTTPException(status_code=400, detail="corsa_id obbligatorio")
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("DELETE FROM percorso WHERE id_corsa = %s RETURNING id;", (corsa_id,))
+        deleted = [str(r[0]) for r in cur.fetchall()]
+        conn.commit()
+        return {"status": "ok", "corsa_id": corsa_id, "eliminati": len(deleted)}
+    finally:
+        cur.close()
+        conn.close()
+
+
 @app.post("/internal/percorso/elimina")
 def elimina_percorso(payload: dict):
     conn = get_connection()

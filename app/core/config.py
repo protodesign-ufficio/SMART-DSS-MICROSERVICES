@@ -211,5 +211,14 @@ def now_iso():
 class _ServiceCfg(BaseModel):
     cache_delta_minutes: int = 120
     replanning_check_interval_seconds: int = 300
+    replanning_theta_min: float = float(os.getenv("REPLANNING_THETA_MIN", "10"))
+    replanning_theta_critical_min: float = float(os.getenv("REPLANNING_THETA_CRITICAL_MIN", "30"))
+    replanning_max_late: int = int(os.getenv("REPLANNING_MAX_LATE", "2"))
+    replanning_max_critical: int = int(os.getenv("REPLANNING_MAX_CRITICAL", "1"))
+    replanning_total_delay_max: float = float(os.getenv("REPLANNING_TOTAL_DELAY_MAX", "60"))
+    replanning_single_delay_max: float = float(os.getenv("REPLANNING_SINGLE_DELAY_MAX", "40"))
+    replanning_horizon_minutes: int = int(os.getenv("REPLANNING_HORIZON_MINUTES", "120"))
+    replanning_cooldown_minutes: int = int(os.getenv("REPLANNING_COOLDOWN_MINUTES", "30"))
+    replanning_freeze_window_minutes: int = int(os.getenv("REPLANNING_FREEZE_WINDOW_MINUTES", "15"))
 
 SERVICE_CONFIG = _ServiceCfg()
