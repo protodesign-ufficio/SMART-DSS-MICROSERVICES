@@ -97,7 +97,8 @@ def get_percorso(
                 ST_AsGeoJSON(p.geom_rotta),
                 p.vascello_id,
                 p.comfort,
-                p.distanza_nm
+                p.distanza_nm,
+                p.weather_cache_keys
             FROM percorso p
             WHERE p.id = %s
             LIMIT 1;
@@ -109,7 +110,8 @@ def get_percorso(
 
         (
             pid, corsa_id, pref, vref, tempo_perc_min, consumo,
-            geom_rotta, vascello_id, comfort, distanza_nm
+            geom_rotta, vascello_id, comfort, distanza_nm,
+            weather_cache_keys
         ) = row
 
         response = {
@@ -122,7 +124,8 @@ def get_percorso(
             "consumo": consumo,
             "geom_rotta": geom_rotta,
             "comfort": comfort,
-            "distanza_nm": distanza_nm
+            "distanza_nm": distanza_nm,
+            "weather_cache_keys": weather_cache_keys
         }
 
         tratta_id = None
@@ -375,7 +378,8 @@ def get_percorsi_by_corsa(
                 pv.confidenza_max,
                 pv.created_at AS previsione_created_at,
                 p.comfort,
-                p.distanza_nm
+                p.distanza_nm,
+                p.weather_cache_keys
             FROM percorso p
             JOIN corsa c ON p.id_corsa = c.id
             LEFT JOIN vascello v ON p.vascello_id = v.id
@@ -536,7 +540,7 @@ def get_percorsi_by_corsa(
                 pid, cid, pref, vref, tempo_perc_min, consumo, geom_rotta,
                 orario_partenza_schedulato, created_at, vascello_id,
                 capacita_passeggeri, previsione_previsti, confidenza_min,
-                confidenza_max, previsione_data, comfort, distanza_nm
+                confidenza_max, previsione_data, comfort, distanza_nm, weather_cache_keys
             ) = r
 
             orario_arrivo_previsto = None
@@ -570,7 +574,8 @@ def get_percorsi_by_corsa(
                 "distanza_nm": distanza_nm,
                 "pref": pref,
                 "vref": vref,
-                "geom_rotta": geom_rotta
+                "geom_rotta": geom_rotta,
+                "weather_cache_keys": weather_cache_keys,
             }
 
             if "corsa" in includes and corsa_obj:

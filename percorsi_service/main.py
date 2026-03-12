@@ -22,6 +22,27 @@ def get_connection():
     return psycopg2.connect(DB_CONN)
 
 
+def _ensure_schema():
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            ALTER TABLE percorso
+            ADD COLUMN IF NOT EXISTS weather_cache_keys JSONB NULL;
+            """
+        )
+        conn.commit()
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.on_event("startup")
+def startup_init():
+    _ensure_schema()
+
+
 def _get_json(base_url: str, path: str, timeout: float = 6.0):
     url = f"{base_url.rstrip('/')}{path}"
     try:
@@ -69,7 +90,8 @@ def get_percorso(percorso_id: str, include: str | None = Query(None)):
             """
             SELECT p.id, p.id_corsa, p.pref, p.vref,
                    EXTRACT(EPOCH FROM p.tempo_percorrenza_min)/60.0 AS tempo_percorrenza_min,
-                   p.consumo, ST_AsGeoJSON(p.geom_rotta), p.vascello_id, p.comfort, p.distanza_nm
+                   p.consumo, ST_AsGeoJSON(p.geom_rotta), p.vascello_id, p.comfort, p.distanza_nm,
+                   p.weather_cache_keys
             FROM percorso p
             WHERE p.id = %s
             LIMIT 1;
@@ -80,7 +102,7 @@ def get_percorso(percorso_id: str, include: str | None = Query(None)):
         if row is None:
             raise HTTPException(404, f"Percorso non trovato: {percorso_id}")
 
-        pid, corsa_id, pref, vref, tempo_perc_min, consumo, geom_rotta, vascello_id, comfort, distanza_nm = row
+        pid, corsa_id, pref, vref, tempo_perc_min, consumo, geom_rotta, vascello_id, comfort, distanza_nm, weather_cache_keys = row
         response = {
             "percorso_id": str(pid),
             "corsa_id": str(corsa_id),
@@ -92,6 +114,7 @@ def get_percorso(percorso_id: str, include: str | None = Query(None)):
             "geom_rotta": geom_rotta,
             "comfort": comfort,
             "distanza_nm": distanza_nm,
+            "weather_cache_keys": weather_cache_keys,
         }
 
         tratta_id = None
@@ -186,7 +209,7 @@ def get_percorsi_by_corsa(
         query = f"""
             SELECT p.id, p.id_corsa, p.pref, p.vref, EXTRACT(EPOCH FROM p.tempo_percorrenza_min)/60.0 AS tempo_percorrenza_min,
                    p.consumo, ST_AsGeoJSON(p.geom_rotta), p.created_at,
-                   p.vascello_id, p.comfort, p.distanza_nm
+                   p.vascello_id, p.comfort, p.distanza_nm, p.weather_cache_keys
             FROM percorso p
             WHERE {' AND '.join(where_clauses)}
             ORDER BY {order_by} {mode}
@@ -225,7 +248,7 @@ def get_percorsi_by_corsa(
         for r in rows:
             (
                 pid, cid, pref, vref, tempo_perc_min, consumo, geom_rotta,
-                created_at, vessel_id, comfort, distanza_nm,
+                created_at, vessel_id, comfort, distanza_nm, weather_cache_keys,
             ) = r
 
             capacita_passeggeri = None
@@ -271,6 +294,7 @@ def get_percorsi_by_corsa(
                 "pref": pref,
                 "vref": vref,
                 "geom_rotta": geom_rotta,
+                "weather_cache_keys": weather_cache_keys,
             }
 
             # Apply include expansions
@@ -377,7 +401,7 @@ def crea_percorsi_batch(payload: dict):
                     id_corsa, pref, vref,
                     tempo_percorrenza_min, tempo_riposizionamento_min,
                     consumo, geom_rotta, vascello_id,
-                    consumo_riposizionamento, distanza_nm, comfort
+                    consumo_riposizionamento, distanza_nm, comfort, weather_cache_keys
                 )
                 VALUES (
                     %s, %s::jsonb, %s::jsonb,
@@ -385,7 +409,7 @@ def crea_percorsi_batch(payload: dict):
                     (%s * interval '1 minute'),
                     %s,
                     ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326),
-                    %s, %s, %s, %s
+                    %s, %s, %s, %s, %s::jsonb
                 )
                 RETURNING id;
                 """,
@@ -401,6 +425,7 @@ def crea_percorsi_batch(payload: dict):
                     float(item["consumo_riposizionamento"]),
                     float(item["distanza_nm"]),
                     float(item["comfort"]),
+                    json.dumps(item.get("weather_cache_keys")) if item.get("weather_cache_keys") is not None else None,
                 ),
             )
             inserted_ids.append(str(cur.fetchone()[0]))
@@ -523,7 +548,7 @@ def applica_variazione_percorso(data: dict):
         cur.execute(
             """
             SELECT id, id_corsa, pref, vref, tempo_percorrenza_min, consumo,
-                   ST_AsGeoJSON(geom_rotta), vascello_id, comfort, distanza_nm
+                   ST_AsGeoJSON(geom_rotta), vascello_id, comfort, distanza_nm, weather_cache_keys
             FROM percorso
             WHERE id = %s
             """,
@@ -533,7 +558,7 @@ def applica_variazione_percorso(data: dict):
         if row is None:
             raise HTTPException(status_code=404, detail=f"Percorso non trovato: {data.get('percorso_id')}")
 
-        percorso_id, corsa_id, pref_arr, vref_arr, tempo_percorrenza, consumo, geom_json, vascello_id, comfort, distanza_nm = row
+        percorso_id, corsa_id, pref_arr, vref_arr, tempo_percorrenza, consumo, geom_json, vascello_id, comfort, distanza_nm, weather_cache_keys = row
         geom = json.loads(geom_json)
         coords = geom.get("coordinates", [])
 
@@ -562,11 +587,11 @@ def applica_variazione_percorso(data: dict):
             """
             INSERT INTO percorso (
                 id, id_corsa, pref, vref, tempo_percorrenza_min, consumo, geom_rotta,
-                vascello_id, comfort, distanza_nm
+                vascello_id, comfort, distanza_nm, weather_cache_keys
             ) VALUES (
                 %s, %s, %s::jsonb, %s::jsonb, %s, %s,
                 ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326),
-                %s, %s, %s
+                %s, %s, %s, %s::jsonb
             )
             """,
             (
@@ -580,6 +605,7 @@ def applica_variazione_percorso(data: dict):
                 vascello_id,
                 comfort,
                 distanza_nm,
+                json.dumps(weather_cache_keys) if weather_cache_keys is not None else None,
             ),
         )
 

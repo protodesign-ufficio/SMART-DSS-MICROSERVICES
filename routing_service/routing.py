@@ -514,10 +514,12 @@ def calcola_comfort(Ve, Pv, wave_point, vessel_length):
     #print("Calcolo comfort con Ve:", Ve, "Pv:", Pv)
 
     # --- estrazione variabili onda ---
-    # Usa nomi variabili con suffisso _WW (Wind Waves) dal dataset Copernicus
-    Hs   = float(wave_point["VHM0_WW"].values)
-    Tp   = float(wave_point["VTM01_WW"].values)  # period medio onde (VTM01_WW)
-    Mdir_deg = float(wave_point["VMDR_WW"].values)
+    # Usa variabili di onda totale (incluso swell) come sorgente primaria,
+    # con fallback alle variabili wind-wave (_WW) se le totali non sono disponibili.
+    # In aree costiere semi-chiuse lo swell domina e le _WW sono spesso ~0.
+    Hs       = float(wave_point["VHM0"].values)   if "VHM0"  in wave_point else float(wave_point["VHM0_WW"].values)
+    Tp       = float(wave_point["VTM10"].values)   if "VTM10" in wave_point else float(wave_point["VTM01_WW"].values)
+    Mdir_deg = float(wave_point["VMDR"].values)    if "VMDR"  in wave_point else float(wave_point["VMDR_WW"].values)
 
     # se manca il dato (NaN) → comfort nullo
     if math.isnan(Hs) or math.isnan(Tp) or math.isnan(Mdir_deg):

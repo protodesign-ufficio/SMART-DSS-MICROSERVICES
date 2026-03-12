@@ -27,6 +27,7 @@ class Percorso(BaseModel):
     comfort: Any = Field(..., description="Indice di comfort (0-100)")
     distanza_nm: Any = Field(..., description="Distanza in miglia nautiche")
     vascello_id: Optional[str] = Field(None, description="UUID del vascello assegnato")
+    weather_cache_keys: Optional[dict[str, Optional[str]]] = Field(None, description="Cache key layer meteo usate per il calcolo del percorso")
 
 
 class PercorsoAPI(BaseModel):
@@ -39,6 +40,7 @@ class PercorsoAPI(BaseModel):
     geom_rotta: str = Field(..., description="Geometria GeoJSON della rotta")
     comfort: Any = Field(..., description="Indice comfort navigazione (0-100)")
     distanza_nm: Any = Field(..., description="Distanza miglia nautiche")
+    weather_cache_keys: Optional[dict[str, Optional[str]]] = Field(None, description="Cache key layer meteo usate per il calcolo del percorso")
     corsa: Optional[CorsaWithPrevisione] = Field(
         None, 
         description="Dati corsa (espanso con ?include=corsa)"
@@ -68,6 +70,7 @@ class PercorsoByCorsaItem(BaseModel):
     vref: Any = Field(..., description="Velocità di riferimento in nodi")
     tempo_percorrenza: Any = Field(..., description="Tempo di percorrenza in minuti")
     geom_rotta: str = Field(..., description="Geometria della rotta in formato GeoJSON")
+    weather_cache_keys: Optional[dict[str, Optional[str]]] = Field(None, description="Cache key layer meteo usate per il calcolo del percorso")
     corsa: Optional[CorsaWithPrevisione] = Field(
         None,
         description="Dati corsa (espanso con ?include=corsa)"

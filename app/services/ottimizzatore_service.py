@@ -226,6 +226,7 @@ def ottimizzatore(data: OttimizzatoreBatchInput):
                 continue
             
             percorsi = resp["percorsi"]
+            weather_cache_keys = resp.get("weather_cache_keys") if isinstance(resp.get("weather_cache_keys"), dict) else None
             tempo_riposizionamento_min = float(resp.get("tempo_riposizionamento", 0.0)) if resp.get("tempo_riposizionamento") is not None else 0.0
 
             insert_items = []
@@ -257,6 +258,7 @@ def ottimizzatore(data: OttimizzatoreBatchInput):
                     "consumo_riposizionamento": consumo_riposizionamento,
                     "distanza_nm": float(p.get("distanza_nm", 0)),
                     "comfort": float(p.get("comfort", 0)),
+                    "weather_cache_keys": weather_cache_keys,
                 })
 
             inserted_ids = []

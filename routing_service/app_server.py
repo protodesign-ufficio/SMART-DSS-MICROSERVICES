@@ -98,7 +98,8 @@ def precompute():
             sc_hash = "_sc_" + hashlib.sha256(json.dumps(scenario, sort_keys=True).encode()).hexdigest()[:12]
         else:
             sc_hash = ""
-        dataset_hash = f"{dataset_current}_{dataset_wave}{sc_hash}"
+        empty_suffix = "_empty" if empty else "_full"
+        dataset_hash = f"{dataset_current}_{dataset_wave}{sc_hash}{empty_suffix}"
 
         print(f"[PRECOMPUTE] tollerance={tollerance_minutes} min, delta={delta_minute} min")
 
@@ -382,6 +383,7 @@ def round_output(obj, ndigits=3):
 
 def convert_optimizer_output_to_percorsi(opt_data):
     percorsi = []
+    weather_cache_keys = opt_data.get("weather_cache_keys")
 
     CONSUMO_PER_NM_PIENO_CARICO = 1.0
     FATTORE_VUOTO = 0.2
@@ -438,7 +440,8 @@ def convert_optimizer_output_to_percorsi(opt_data):
 
     return {
         "tempo_riposizionamento": tempo_riposizionamento,
-        "percorsi": percorsi
+        "percorsi": percorsi,
+        "weather_cache_keys": weather_cache_keys,
     }
 
 import math

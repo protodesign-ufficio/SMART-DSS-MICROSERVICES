@@ -54,12 +54,12 @@ def _apply_scenario_to_dataset(ds, dataset_type, scenario):
     if dataset_type == "currents":
         all_vars = ["uo", "vo"]
     else:
-        all_vars = ["VHM0_WW", "VTM01_WW"]  # VMDR_WW (direzione) non viene scalato di default
+        all_vars = ["VHM0", "VTM10", "VHM0_WW", "VTM01_WW"]  # VMDR (direzione) non viene scalato di default
 
     vars_to_modify = [v for v in all_vars if v in ds.data_vars]
     if target_vars:
         # Mappa nomi scenario → nomi dataset
-        name_map = {"u": "uo", "v": "vo", "height": "VHM0_WW", "period": "VTM01_WW", "dir": "VMDR_WW"}
+        name_map = {"u": "uo", "v": "vo", "height": "VHM0", "height_ww": "VHM0_WW", "period": "VTM10", "period_ww": "VTM01_WW", "dir": "VMDR", "dir_ww": "VMDR_WW"}
         mapped = [name_map.get(v, v) for v in target_vars]
         vars_to_modify = [v for v in mapped if v in ds.data_vars]
 
@@ -127,6 +127,52 @@ def _ts_for_filename(s: str) -> str:
         # rimpiazza qualunque char non alfanum con '-'
         return re.sub(r"[^0-9A-Za-z]+", "-", s)
 
+
+def _bbox_to_layer_bounds(bbox):
+    return {
+        "north": bbox["maximum_latitude"],
+        "south": bbox["minimum_latitude"],
+        "east": bbox["maximum_longitude"],
+        "west": bbox["minimum_longitude"],
+    }
+
+
+def _get_weather_layer_cache_key(date_str, bbox, layer_type, scenario=None):
+    payload = {
+        "layer_type": layer_type,
+        "bounds": _bbox_to_layer_bounds(bbox),
+        "timestamp": date_str,
+        "use_cache": True,
+        "save_cache": True,
+        "force_refresh": False,
+    }
+    if scenario:
+        payload["scenario"] = scenario
+
+    try:
+        response = requests.post(
+            f"{WEATHER_SERVICE_URL.rstrip('/')}/internal/weather/layer",
+            json=payload,
+            timeout=90,
+        )
+        response.raise_for_status()
+        body = response.json()
+    except Exception as exc:
+        print(f"[WARN] Impossibile ottenere cache key weather layer '{layer_type}': {exc}")
+        return None
+
+    cache_key = body.get("cache_key") if isinstance(body, dict) else None
+    return str(cache_key) if cache_key else None
+
+
+def _collect_weather_layer_cache_keys(date_str, bbox, scenario=None):
+    keys = {}
+    for layer_type in ("currents", "waves"):
+        cache_key = _get_weather_layer_cache_key(date_str, bbox, layer_type, scenario=scenario)
+        if cache_key:
+            keys[layer_type] = cache_key
+    return keys
+
 def load_dataset_for_date(date_str, bbox, dataset_id):
     print(f"Loading dataset for {date_str} and bbox {bbox}...")
     os.makedirs(OUT_DIR, exist_ok=True)
@@ -137,7 +183,7 @@ def load_dataset_for_date(date_str, bbox, dataset_id):
     print("!!! !!! !!! !!! !!! Dataset path:", out_path)
 
     if "wav" in dataset_id:
-        requested_variables = ["VMDR_WW", "VTM01_WW", "VHM0_WW"]
+        requested_variables = ["VHM0", "VTM10", "VMDR", "VHM0_WW", "VTM01_WW", "VMDR_WW"]
     else:
         requested_variables = VARIABLES
 
@@ -286,6 +332,7 @@ def optimize_route(
     
     dataset_current = "cmems_mod_med_phy-cur_anfc_4.2km_PT15M-i"
     dataset_wave = "cmems_mod_med_wav_anfc_4.2km_PT1H-i"
+
     # Se c’è uno scenario, aggiungiamo un hash dei parametri al dataset_hash
     # per separare i grafi cached con e senza scenario
     if scenario:
@@ -294,11 +341,20 @@ def optimize_route(
         scenario_suffix = "_sc_" + hashlib.sha256(scenario_hash.encode()).hexdigest()[:12]
     else:
         scenario_suffix = ""
-    dataset_hash = f"{dataset_current}_{dataset_wave}{scenario_suffix}"
+    empty_suffix = "_empty" if empty else "_full"
+    dataset_hash = f"{dataset_current}_{dataset_wave}{scenario_suffix}{empty_suffix}"
 
     graph_time = datetime.fromisoformat(date_str)   # date_str che passi è "%Y-%m-%d %H:%M:%S"
     T = int(tollerance_minutes) * 60
     bucket_time = floor_time(graph_time, T)
+
+    weather_cache_keys = {}
+    if not fake_data:
+        weather_cache_keys = _collect_weather_layer_cache_keys(
+            graph_time.strftime("%Y-%m-%d %H:%M:%S"),
+            bbox,
+            scenario=scenario,
+        )
 
     def _build_and_cache_graph(ignore_land_mask: bool):
         if ignore_land_mask:
@@ -321,9 +377,19 @@ def optimize_route(
                 dataset_wave
             )
             print("[DEBUG] Wave dataset loaded successfully")
+            # Interpola i valori NaN nelle variabili d'onda per gestire le lacune
+            # dei dati costieri (punti a terra nel modello ondoso Copernicus)
+            wave_vars = ["VHM0", "VTM10", "VMDR", "VHM0_WW", "VTM01_WW", "VMDR_WW"]
+            for wvar in wave_vars:
+                if wvar in ds_wav:
+                    ds_wav[wvar] = ds_wav[wvar].interpolate_na(dim="longitude", method="nearest", fill_value="extrapolate")
+                    ds_wav[wvar] = ds_wav[wvar].interpolate_na(dim="latitude", method="nearest", fill_value="extrapolate")
+            print("[DEBUG] Wave dataset NaN interpolation completed")
         except Exception as wave_exc:
-            print(f"[DEBUG][ERROR] Wave dataset failed: {wave_exc}")
-            ds_wav = None  # se le onde falliscono, continuo con empty=True
+            if not empty:
+                raise RuntimeError(f"Wave dataset richiesto per calcolo comfort ma non disponibile: {wave_exc}") from wave_exc
+            print(f"[DEBUG][WARN] Wave dataset failed (empty=True, comfort non richiesto): {wave_exc}")
+            ds_wav = None
 
         debug_dataset(ds)
 
@@ -536,6 +602,7 @@ def optimize_route(
         "vessel_id": vessel_id,
         "vessel_name": vessel_name,
         "date": date_str,
+        "weather_cache_keys": weather_cache_keys,
         "summary": {
             "path_found": len(routes) > 0,
             "pareto_count": len(routes),
