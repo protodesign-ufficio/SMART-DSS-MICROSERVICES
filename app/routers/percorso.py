@@ -2,11 +2,12 @@ from fastapi import APIRouter, HTTPException, Path, Query
 from typing import List, Optional
 from app.core.database import get_connection
 from app.core.percorsi_client import delegation_enabled as percorsi_delegation_enabled, get_json as percorsi_get_json, post_json as percorsi_post_json, PercorsiDelegationError
-from app.core.config import ENABLE_PERCORSI_FALLBACK
+from app.core.config import ENABLE_PERCORSI_FALLBACK, WEATHER_SERVICE_URL
 from app.models.percorso import Percorso, PercorsiByCorsa, PercorsoDeleteInput, PercorsoAPI
 from app.models.common import VariazionePercorsoInput, VariazionePercorsoResponse
 from app.services.variazione_percorso_service import applica_variazione_percorso
 from datetime import timedelta
+import requests
 
 ALLOWED_ORDER_BY = {"tempo_percorrenza_min","consumo","created_at","pref","vref","comfort","distanza_nm"}
 ALLOWED_INCLUDES = {"corsa", "tratta", "vascello"}
@@ -37,9 +38,31 @@ def _handle_percorsi_fallback(exc: Exception) -> None:
     - `tratta`: dettagli della tratta associata alla corsa
     - `vascello`: dettagli del vascello associato al percorso
 
+    ---
+
+    **Campo `scenario`** (sempre presente nella risposta):
+
+    Indica la fonte dei dati meteo utilizzati per il calcolo del percorso.
+
+    - **Solo dati Copernicus reali:**
+      ```json
+      "scenario": { "fonte_dati": "copernicus" }
+      ```
+
+    - **Dati Copernicus alterati da scenario what-if:**
+      ```json
+      "scenario": {
+        "fonte_dati": "copernicus+scenario",
+        "scenario_id": 2,
+        "scenario_nome": "rough_sea"
+      }
+      ```
+
+    ---
+
     Esempi:
     - `/percorso/{id}`
-      → restituisce solo il percorso
+      → restituisce solo il percorso (con info scenario)
 
     - `/percorso/{id}?include=corsa`
       → restituisce percorso + corsa
@@ -98,7 +121,8 @@ def get_percorso(
                 p.vascello_id,
                 p.comfort,
                 p.distanza_nm,
-                p.weather_cache_keys
+                p.weather_cache_keys,
+                p.scenario_id
             FROM percorso p
             WHERE p.id = %s
             LIMIT 1;
@@ -111,13 +135,24 @@ def get_percorso(
         (
             pid, corsa_id, pref, vref, tempo_perc_min, consumo,
             geom_rotta, vascello_id, comfort, distanza_nm,
-            weather_cache_keys
+            weather_cache_keys, scenario_id
         ) = row
+
+        # Resolve scenario info
+        if scenario_id is not None:
+            scenario_obj = {"fonte_dati": "copernicus+scenario", "scenario_id": scenario_id, "scenario_nome": None}
+            try:
+                sc_resp = requests.get(f"{WEATHER_SERVICE_URL}/internal/weather/scenarios/{scenario_id}", timeout=5)
+                if sc_resp.status_code == 200:
+                    sc = sc_resp.json()
+                    scenario_obj["scenario_nome"] = sc.get("label")
+            except Exception:
+                pass
+        else:
+            scenario_obj = {"fonte_dati": "copernicus"}
 
         response = {
             "percorso_id": str(pid),
-            #"corsa_id": str(corsa_id),
-            #"vascello_id": str(vascello_id) if vascello_id else None,
             "pref": pref,
             "vref": vref,
             "tempo_percorrenza": tempo_perc_min,
@@ -125,7 +160,8 @@ def get_percorso(
             "geom_rotta": geom_rotta,
             "comfort": comfort,
             "distanza_nm": distanza_nm,
-            "weather_cache_keys": weather_cache_keys
+            "weather_cache_keys": weather_cache_keys,
+            "scenario": scenario_obj,
         }
 
         tratta_id = None
@@ -309,6 +345,26 @@ def get_percorso(
     - `corsa`: informazioni sulla corsa associata
     - `tratta`: dettagli della tratta associata alla corsa
     - `vascello`: dettagli del vascello associato al percorso
+
+    ---
+
+    **Campo `scenario`** (sempre presente in ogni percorso):
+
+    Indica la fonte dei dati meteo utilizzati per il calcolo del percorso.
+
+    | `fonte_dati` | Significato | Campi aggiuntivi |
+    |---|---|---|
+    | `copernicus` | Solo dati Copernicus reali | — |
+    | `copernicus+scenario` | Dati Copernicus alterati da scenario what-if | `scenario_id`, `scenario_nome` |
+
+    Esempio risposta con scenario:
+    ```json
+    "scenario": {
+      "fonte_dati": "copernicus+scenario",
+      "scenario_id": 2,
+      "scenario_nome": "rough_sea"
+    }
+    ```
     """,
     responses={
         200: {"description": "Lista percorsi restituita"},
@@ -379,7 +435,8 @@ def get_percorsi_by_corsa(
                 pv.created_at AS previsione_created_at,
                 p.comfort,
                 p.distanza_nm,
-                p.weather_cache_keys
+                p.weather_cache_keys,
+                p.scenario_id
             FROM percorso p
             JOIN corsa c ON p.id_corsa = c.id
             LEFT JOIN vascello v ON p.vascello_id = v.id
@@ -534,13 +591,26 @@ def get_percorsi_by_corsa(
                         "data_creazione": dc.isoformat() if dc else None
                     }
 
+        # Pre-fetch scenario names for all distinct scenario_ids in results
+        scenario_ids = {r[18] for r in rows if r[18] is not None}
+        scenario_cache = {}
+        for sid in scenario_ids:
+            try:
+                sc_resp = requests.get(f"{WEATHER_SERVICE_URL}/internal/weather/scenarios/{sid}", timeout=5)
+                if sc_resp.status_code == 200:
+                    sc = sc_resp.json()
+                    scenario_cache[sid] = sc.get("label")
+            except Exception:
+                pass
+
         percorsi = []
         for r in rows:
             (
                 pid, cid, pref, vref, tempo_perc_min, consumo, geom_rotta,
                 orario_partenza_schedulato, created_at, vascello_id,
                 capacita_passeggeri, previsione_previsti, confidenza_min,
-                confidenza_max, previsione_data, comfort, distanza_nm, weather_cache_keys
+                confidenza_max, previsione_data, comfort, distanza_nm, weather_cache_keys,
+                scenario_id
             ) = r
 
             orario_arrivo_previsto = None
@@ -576,6 +646,7 @@ def get_percorsi_by_corsa(
                 "vref": vref,
                 "geom_rotta": geom_rotta,
                 "weather_cache_keys": weather_cache_keys,
+                "scenario": {"fonte_dati": "copernicus+scenario", "scenario_id": scenario_id, "scenario_nome": scenario_cache.get(scenario_id)} if scenario_id is not None else {"fonte_dati": "copernicus"},
             }
 
             if "corsa" in includes and corsa_obj:

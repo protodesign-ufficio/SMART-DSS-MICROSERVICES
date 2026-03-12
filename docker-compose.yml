@@ -142,6 +142,7 @@ services:
       PERCORSI_DB_CONN: "dbname=percorsi_db user=postgres password=admin host=host.docker.internal"
       OPERATIVO_SERVICE_URL: "http://operativo:8072"
       ANAGRAFICA_SERVICE_URL: "http://anagrafica:8070"
+      WEATHER_SERVICE_URL: "http://weather:8076"
     extra_hosts:
       - "host.docker.internal:host-gateway"
 

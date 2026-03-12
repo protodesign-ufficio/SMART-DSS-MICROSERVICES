@@ -15,6 +15,13 @@ class Passeggeri(BaseModel):
     data_previsione: Optional[Any] = Field(None, description="Timestamp della previsione")
 
 
+class ScenarioInfo(BaseModel):
+    """Informazioni sulla fonte dati meteo e sull'eventuale scenario what-if."""
+    fonte_dati: str = Field(..., description="Fonte dati meteo: 'copernicus' (solo dati reali) o 'copernicus+scenario' (dati alterati da scenario what-if)")
+    scenario_id: Optional[int] = Field(None, description="ID dello scenario meteo what-if (null se solo Copernicus)")
+    scenario_nome: Optional[str] = Field(None, description="Nome dello scenario meteo what-if (null se solo Copernicus)")
+
+
 class Percorso(BaseModel):
     """Rappresentazione di un percorso ottimizzato."""
     id: str = Field(..., description="UUID del percorso")
@@ -41,6 +48,10 @@ class PercorsoAPI(BaseModel):
     comfort: Any = Field(..., description="Indice comfort navigazione (0-100)")
     distanza_nm: Any = Field(..., description="Distanza miglia nautiche")
     weather_cache_keys: Optional[dict[str, Optional[str]]] = Field(None, description="Cache key layer meteo usate per il calcolo del percorso")
+    scenario: ScenarioInfo = Field(
+        ...,
+        description="Info fonte dati meteo e scenario what-if associato"
+    )
     corsa: Optional[CorsaWithPrevisione] = Field(
         None, 
         description="Dati corsa (espanso con ?include=corsa)"
@@ -71,6 +82,10 @@ class PercorsoByCorsaItem(BaseModel):
     tempo_percorrenza: Any = Field(..., description="Tempo di percorrenza in minuti")
     geom_rotta: str = Field(..., description="Geometria della rotta in formato GeoJSON")
     weather_cache_keys: Optional[dict[str, Optional[str]]] = Field(None, description="Cache key layer meteo usate per il calcolo del percorso")
+    scenario: ScenarioInfo = Field(
+        ...,
+        description="Info fonte dati meteo e scenario what-if associato"
+    )
     corsa: Optional[CorsaWithPrevisione] = Field(
         None,
         description="Dati corsa (espanso con ?include=corsa)"

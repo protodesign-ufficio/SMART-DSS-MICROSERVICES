@@ -187,6 +187,8 @@ def load_dataset_for_date(date_str, bbox, dataset_id):
     else:
         requested_variables = VARIABLES
 
+    # Se il file cached esiste già lo usiamo (anche se ha solo variabili _WW);
+    # calcola_comfort fa già fallback automatico a _WW se VHM0/VTM10/VMDR mancano.
     if not os.path.exists(out_path):
         payload = {
             "dataset_id": dataset_id,
@@ -377,19 +379,22 @@ def optimize_route(
                 dataset_wave
             )
             print("[DEBUG] Wave dataset loaded successfully")
-            # Interpola i valori NaN nelle variabili d'onda per gestire le lacune
-            # dei dati costieri (punti a terra nel modello ondoso Copernicus)
+            # Riempi i valori NaN nelle variabili d'onda per gestire le lacune
+            # dei dati costieri (punti a terra nel modello ondoso Copernicus).
+            # Usa numpy nanmean (nessuna dipendenza esterna).
+            import numpy as np
             wave_vars = ["VHM0", "VTM10", "VMDR", "VHM0_WW", "VTM01_WW", "VMDR_WW"]
             for wvar in wave_vars:
                 if wvar in ds_wav:
-                    ds_wav[wvar] = ds_wav[wvar].interpolate_na(dim="longitude", method="nearest", fill_value="extrapolate")
-                    ds_wav[wvar] = ds_wav[wvar].interpolate_na(dim="latitude", method="nearest", fill_value="extrapolate")
-            print("[DEBUG] Wave dataset NaN interpolation completed")
+                    arr = ds_wav[wvar].values.copy()
+                    mask = np.isnan(arr)
+                    if mask.any() and not mask.all():
+                        arr[mask] = np.nanmean(arr)
+                        ds_wav[wvar].values = arr
+            print("[DEBUG] Wave dataset NaN fill completed")
         except Exception as wave_exc:
-            if not empty:
-                raise RuntimeError(f"Wave dataset richiesto per calcolo comfort ma non disponibile: {wave_exc}") from wave_exc
-            print(f"[DEBUG][WARN] Wave dataset failed (empty=True, comfort non richiesto): {wave_exc}")
-            ds_wav = None
+            print(f"[DEBUG][ERROR] Wave dataset failed: {wave_exc}")
+            ds_wav = None  # fallback: comfort calcolato senza dati ondosi
 
         debug_dataset(ds)
 

@@ -226,7 +226,8 @@ def applica_variazione_percorso(data: VariazionePercorsoInput) -> VariazionePerc
                 ST_AsGeoJSON(geom_rotta),
                 vascello_id,
                 comfort,
-                distanza_nm
+                distanza_nm,
+                scenario_id
             FROM percorso
             WHERE id = %s
         """, (data.percorso_id,))
@@ -241,7 +242,7 @@ def applica_variazione_percorso(data: VariazionePercorsoInput) -> VariazionePerc
         (
             percorso_id, corsa_id, pref_arr, vref_arr,
             tempo_percorrenza, consumo, geom_json,
-            vascello_id, comfort, distanza_nm
+            vascello_id, comfort, distanza_nm, scenario_id
         ) = row
         
         # Parse geometria
@@ -294,11 +295,12 @@ def applica_variazione_percorso(data: VariazionePercorsoInput) -> VariazionePerc
                 geom_rotta,
                 vascello_id,
                 comfort,
-                distanza_nm
+                distanza_nm,
+                scenario_id
             ) VALUES (
                 %s, %s, %s::jsonb, %s::jsonb, %s, %s,
                 ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326),
-                %s, %s, %s
+                %s, %s, %s, %s
             )
         """, (
             nuovo_percorso_id,
@@ -310,7 +312,8 @@ def applica_variazione_percorso(data: VariazionePercorsoInput) -> VariazionePerc
             new_geom_json,
             vascello_id,
             comfort,
-            distanza_nm
+            distanza_nm,
+            scenario_id
         ))
         
         conn.commit()

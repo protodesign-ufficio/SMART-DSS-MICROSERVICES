@@ -11,6 +11,7 @@ import requests
 DB_CONN = os.getenv("PERCORSI_DB_CONN", "dbname=percorsi_db user=postgres password=admin host=localhost")
 OPERATIVO_SERVICE_URL = os.getenv("OPERATIVO_SERVICE_URL", "http://operativo:8072")
 ANAGRAFICA_SERVICE_URL = os.getenv("ANAGRAFICA_SERVICE_URL", "http://anagrafica:8070")
+WEATHER_SERVICE_URL = os.getenv("WEATHER_SERVICE_URL", "http://weather:8076")
 
 app = FastAPI(title="Percorsi Internal Service", version="0.1.0")
 
@@ -30,6 +31,12 @@ def _ensure_schema():
             """
             ALTER TABLE percorso
             ADD COLUMN IF NOT EXISTS weather_cache_keys JSONB NULL;
+            """
+        )
+        cur.execute(
+            """
+            ALTER TABLE percorso
+            ADD COLUMN IF NOT EXISTS scenario_id INTEGER NULL;
             """
         )
         conn.commit()
@@ -91,7 +98,7 @@ def get_percorso(percorso_id: str, include: str | None = Query(None)):
             SELECT p.id, p.id_corsa, p.pref, p.vref,
                    EXTRACT(EPOCH FROM p.tempo_percorrenza_min)/60.0 AS tempo_percorrenza_min,
                    p.consumo, ST_AsGeoJSON(p.geom_rotta), p.vascello_id, p.comfort, p.distanza_nm,
-                   p.weather_cache_keys
+                   p.weather_cache_keys, p.scenario_id
             FROM percorso p
             WHERE p.id = %s
             LIMIT 1;
@@ -102,7 +109,20 @@ def get_percorso(percorso_id: str, include: str | None = Query(None)):
         if row is None:
             raise HTTPException(404, f"Percorso non trovato: {percorso_id}")
 
-        pid, corsa_id, pref, vref, tempo_perc_min, consumo, geom_rotta, vascello_id, comfort, distanza_nm, weather_cache_keys = row
+        pid, corsa_id, pref, vref, tempo_perc_min, consumo, geom_rotta, vascello_id, comfort, distanza_nm, weather_cache_keys, scenario_id = row
+
+        # Resolve scenario info
+        if scenario_id is not None:
+            scenario_obj = {"fonte_dati": "copernicus+scenario", "scenario_id": scenario_id, "scenario_nome": None}
+            try:
+                sc = _get_json(WEATHER_SERVICE_URL, f"/internal/weather/scenarios/{scenario_id}", timeout=5.0)
+                if sc:
+                    scenario_obj["scenario_nome"] = sc.get("label")
+            except Exception:
+                pass
+        else:
+            scenario_obj = {"fonte_dati": "copernicus"}
+
         response = {
             "percorso_id": str(pid),
             "corsa_id": str(corsa_id),
@@ -115,6 +135,7 @@ def get_percorso(percorso_id: str, include: str | None = Query(None)):
             "comfort": comfort,
             "distanza_nm": distanza_nm,
             "weather_cache_keys": weather_cache_keys,
+            "scenario": scenario_obj,
         }
 
         tratta_id = None
@@ -209,7 +230,7 @@ def get_percorsi_by_corsa(
         query = f"""
             SELECT p.id, p.id_corsa, p.pref, p.vref, EXTRACT(EPOCH FROM p.tempo_percorrenza_min)/60.0 AS tempo_percorrenza_min,
                    p.consumo, ST_AsGeoJSON(p.geom_rotta), p.created_at,
-                   p.vascello_id, p.comfort, p.distanza_nm, p.weather_cache_keys
+                   p.vascello_id, p.comfort, p.distanza_nm, p.weather_cache_keys, p.scenario_id
             FROM percorso p
             WHERE {' AND '.join(where_clauses)}
             ORDER BY {order_by} {mode}
@@ -243,12 +264,23 @@ def get_percorsi_by_corsa(
                         "geometry": t.get("geometry"),
                     }
 
+        # Pre-fetch scenario names for all distinct scenario_ids in results
+        scenario_ids = {r[12] for r in rows if r[12] is not None}
+        scenario_cache = {}
+        for sid in scenario_ids:
+            try:
+                sc = _get_json(WEATHER_SERVICE_URL, f"/internal/weather/scenarios/{sid}", timeout=5.0)
+                if sc:
+                    scenario_cache[sid] = sc.get("label")
+            except Exception:
+                pass
+
         vascelli_cache = {}
         percorsi = []
         for r in rows:
             (
                 pid, cid, pref, vref, tempo_perc_min, consumo, geom_rotta,
-                created_at, vessel_id, comfort, distanza_nm, weather_cache_keys,
+                created_at, vessel_id, comfort, distanza_nm, weather_cache_keys, scenario_id,
             ) = r
 
             capacita_passeggeri = None
@@ -295,6 +327,7 @@ def get_percorsi_by_corsa(
                 "vref": vref,
                 "geom_rotta": geom_rotta,
                 "weather_cache_keys": weather_cache_keys,
+                "scenario": {"fonte_dati": "copernicus+scenario", "scenario_id": scenario_id, "scenario_nome": scenario_cache.get(scenario_id)} if scenario_id is not None else {"fonte_dati": "copernicus"},
             }
 
             # Apply include expansions
@@ -401,7 +434,7 @@ def crea_percorsi_batch(payload: dict):
                     id_corsa, pref, vref,
                     tempo_percorrenza_min, tempo_riposizionamento_min,
                     consumo, geom_rotta, vascello_id,
-                    consumo_riposizionamento, distanza_nm, comfort, weather_cache_keys
+                    consumo_riposizionamento, distanza_nm, comfort, weather_cache_keys, scenario_id
                 )
                 VALUES (
                     %s, %s::jsonb, %s::jsonb,
@@ -409,7 +442,7 @@ def crea_percorsi_batch(payload: dict):
                     (%s * interval '1 minute'),
                     %s,
                     ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326),
-                    %s, %s, %s, %s, %s::jsonb
+                    %s, %s, %s, %s, %s::jsonb, %s
                 )
                 RETURNING id;
                 """,
@@ -426,6 +459,7 @@ def crea_percorsi_batch(payload: dict):
                     float(item["distanza_nm"]),
                     float(item["comfort"]),
                     json.dumps(item.get("weather_cache_keys")) if item.get("weather_cache_keys") is not None else None,
+                    item.get("scenario_id"),
                 ),
             )
             inserted_ids.append(str(cur.fetchone()[0]))
@@ -548,7 +582,7 @@ def applica_variazione_percorso(data: dict):
         cur.execute(
             """
             SELECT id, id_corsa, pref, vref, tempo_percorrenza_min, consumo,
-                   ST_AsGeoJSON(geom_rotta), vascello_id, comfort, distanza_nm, weather_cache_keys
+                   ST_AsGeoJSON(geom_rotta), vascello_id, comfort, distanza_nm, weather_cache_keys, scenario_id
             FROM percorso
             WHERE id = %s
             """,
@@ -558,7 +592,7 @@ def applica_variazione_percorso(data: dict):
         if row is None:
             raise HTTPException(status_code=404, detail=f"Percorso non trovato: {data.get('percorso_id')}")
 
-        percorso_id, corsa_id, pref_arr, vref_arr, tempo_percorrenza, consumo, geom_json, vascello_id, comfort, distanza_nm, weather_cache_keys = row
+        percorso_id, corsa_id, pref_arr, vref_arr, tempo_percorrenza, consumo, geom_json, vascello_id, comfort, distanza_nm, weather_cache_keys, scenario_id = row
         geom = json.loads(geom_json)
         coords = geom.get("coordinates", [])
 
@@ -587,11 +621,11 @@ def applica_variazione_percorso(data: dict):
             """
             INSERT INTO percorso (
                 id, id_corsa, pref, vref, tempo_percorrenza_min, consumo, geom_rotta,
-                vascello_id, comfort, distanza_nm, weather_cache_keys
+                vascello_id, comfort, distanza_nm, weather_cache_keys, scenario_id
             ) VALUES (
                 %s, %s, %s::jsonb, %s::jsonb, %s, %s,
                 ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326),
-                %s, %s, %s, %s::jsonb
+                %s, %s, %s, %s::jsonb, %s
             )
             """,
             (
@@ -606,6 +640,7 @@ def applica_variazione_percorso(data: dict):
                 comfort,
                 distanza_nm,
                 json.dumps(weather_cache_keys) if weather_cache_keys is not None else None,
+                scenario_id,
             ),
         )
 

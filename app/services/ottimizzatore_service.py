@@ -259,6 +259,7 @@ def ottimizzatore(data: OttimizzatoreBatchInput):
                     "distanza_nm": float(p.get("distanza_nm", 0)),
                     "comfort": float(p.get("comfort", 0)),
                     "weather_cache_keys": weather_cache_keys,
+                    "scenario_id": inp.scenario_id,
                 })
 
             inserted_ids = []
