@@ -666,18 +666,20 @@ def get_layer_data(req: LayerRequest):
     _ensure_login()
 
     # Risolvi scenario_id → scenario dal DB
+    scenario_label = None
     if req.scenario_id is not None:
         conn = _get_db_connection()
         cur = conn.cursor()
         try:
             cur.execute(
-                "SELECT scenario_json FROM weather_scenarios WHERE id = %s",
+                "SELECT scenario_json, label FROM weather_scenarios WHERE id = %s",
                 (req.scenario_id,),
             )
             row = cur.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail=f"Scenario {req.scenario_id} non trovato.")
             req.scenario = ScenarioModifier(**row[0])
+            scenario_label = row[1]
         finally:
             cur.close()
             conn.close()
@@ -803,6 +805,7 @@ def get_layer_data(req: LayerRequest):
 
         if has_scenario:
             payload["scenario"] = {
+                "scenario_nome": scenario_label,
                 "multiplier": req.scenario.multiplier,
                 "function": req.scenario.function,
                 "function_params": req.scenario.function_params,
