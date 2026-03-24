@@ -178,6 +178,7 @@ def ottimizzatore(data: OttimizzatoreBatchInput):
                 if scenario_data is None:
                     raise HTTPException(404, f"Scenario {inp.scenario_id} non trovato nel weather service")
                 payload["scenario"] = scenario_data.get("scenario", {})
+                payload["scenario_id"] = inp.scenario_id
             
             corsa_data = {
                 "corsa_id": inp.corsa_id,
@@ -373,6 +374,7 @@ def stima_riposizionamento(data):
                 if scenario_data is None:
                     raise HTTPException(404, f"Scenario {inp.scenario_id} non trovato nel weather service")
                 payload["scenario"] = scenario_data.get("scenario", {})
+                payload["scenario_id"] = inp.scenario_id
 
             payloads_to_compute.append((inp, payload))
         

@@ -137,7 +137,7 @@ def _bbox_to_layer_bounds(bbox):
     }
 
 
-def _get_weather_layer_cache_key(date_str, bbox, layer_type, scenario=None):
+def _get_weather_layer_cache_key(date_str, bbox, layer_type, scenario=None, scenario_id=None):
     payload = {
         "layer_type": layer_type,
         "bounds": _bbox_to_layer_bounds(bbox),
@@ -146,7 +146,9 @@ def _get_weather_layer_cache_key(date_str, bbox, layer_type, scenario=None):
         "save_cache": True,
         "force_refresh": False,
     }
-    if scenario:
+    if scenario_id is not None:
+        payload["scenario_id"] = scenario_id
+    elif scenario:
         payload["scenario"] = scenario
 
     try:
@@ -165,10 +167,10 @@ def _get_weather_layer_cache_key(date_str, bbox, layer_type, scenario=None):
     return str(cache_key) if cache_key else None
 
 
-def _collect_weather_layer_cache_keys(date_str, bbox, scenario=None):
+def _collect_weather_layer_cache_keys(date_str, bbox, scenario=None, scenario_id=None):
     keys = {}
     for layer_type in ("currents", "waves"):
-        cache_key = _get_weather_layer_cache_key(date_str, bbox, layer_type, scenario=scenario)
+        cache_key = _get_weather_layer_cache_key(date_str, bbox, layer_type, scenario=scenario, scenario_id=scenario_id)
         if cache_key:
             keys[layer_type] = cache_key
     return keys
@@ -257,6 +259,7 @@ def optimize_route(
     eps_time=0.0, eps_cost=0.0, empty=False, fake_data=False, tollerance_minutes=60,
     vessel_signature="default_vessel",
     scenario=None,
+    scenario_id=None,
 ):
     """
     Esegue l'ottimizzazione del percorso tra start e goal usando Copernicus + routing.
@@ -356,6 +359,7 @@ def optimize_route(
             graph_time.strftime("%Y-%m-%d %H:%M:%S"),
             bbox,
             scenario=scenario,
+            scenario_id=scenario_id,
         )
 
     def _build_and_cache_graph(ignore_land_mask: bool):

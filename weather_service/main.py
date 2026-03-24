@@ -3,6 +3,7 @@ import math
 import threading
 import json
 import hashlib
+from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 
@@ -15,6 +16,12 @@ from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 from typing import Optional
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    _ensure_schema()
+    yield
+
+
 app = FastAPI(
     title="Weather Internal Service",
     version="0.1.0",
@@ -25,6 +32,7 @@ app = FastAPI(
         "NetCDF per l'ottimizzatore di rotta NAMOA*."
     ),
     contact={"name": "SMART-DSS Team"},
+    lifespan=lifespan,
 )
 
 _USERNAME = os.getenv("COPERNICUSMARINE_SERVICE_USERNAME", "")
@@ -215,10 +223,6 @@ def _ensure_schema() -> None:
         conn.close()
 
 
-@app.on_event("startup")
-def startup_init() -> None:
-    _ensure_schema()
-
 
 def _bounds_to_dict(bounds: Bounds | None) -> dict | None:
     if not bounds:
@@ -388,11 +392,13 @@ def _ensure_login() -> None:
             return
         if not _USERNAME or not _PASSWORD:
             raise HTTPException(status_code=500, detail="Copernicus credentials not configured")
-        copernicusmarine.login(
+        ok = copernicusmarine.login(
             username=_USERNAME,
             password=_PASSWORD,
-            force_overwrite=False,
+            check_credentials_valid=True,
         )
+        if not ok:
+            raise HTTPException(status_code=502, detail="Copernicus credentials are invalid")
         _logged_in = True
 
 
@@ -658,7 +664,8 @@ def subset_download(req: SubsetRequest):
         "Restituisce i dati meteo (correnti o onde) formattati per la visualizzazione su mappa. "
         "Supporta cache DB con TTL configurabile: se use_cache=true e il dato è ancora valido, "
         "viene servito dalla cache; altrimenti interroga Copernicus Marine Service in tempo reale. "
-        "Il campo 'source' nella risposta indica se il dato proviene da 'db_cache' o da 'copernicus'."
+        "Il campo 'source' nella risposta può valere: 'db_cache' (dato da cache DB), "
+        "'copernicus' (dato fresco da CMEMS) o 'copernicus+scenario' (dato CMEMS modificato da uno scenario what-if)."
     ),
 )
 def get_layer_data(req: LayerRequest):
@@ -695,6 +702,34 @@ def get_layer_data(req: LayerRequest):
             if isinstance(cached_payload, dict):
                 cached_payload["source"] = "db_cache"
                 cached_payload["cache_key"] = cache_key
+                # Arricchisci scenario con label se mancante
+                if isinstance(cached_payload.get("scenario"), dict):
+                    sc = cached_payload["scenario"]
+                    # Normalizza vecchi record che usavano la chiave italiana
+                    if "scenario_nome" in sc:
+                        label_val = sc.pop("scenario_nome")
+                        if label_val is not None:
+                            sc["scenario_name"] = label_val
+                    # Se manca scenario_name ma c'è scenario_id, recupera la label dal DB
+                    if sc.get("scenario_name") is None and sc.get("scenario_id") is not None:
+                        conn = _get_db_connection()
+                        cur = conn.cursor()
+                        try:
+                            cur.execute(
+                                "SELECT label FROM weather_scenarios WHERE id = %s",
+                                (sc["scenario_id"],),
+                            )
+                            sc_row = cur.fetchone()
+                            if sc_row and sc_row[0]:
+                                sc["scenario_name"] = sc_row[0]
+                        finally:
+                            cur.close()
+                            conn.close()
+                    # Rimuovi scenario_name se ancora null
+                    if sc.get("scenario_name") is None:
+                        sc.pop("scenario_name", None)
+                    else:
+                        sc["scenario_nome"] = sc["scenario_name"]
             return cached_payload
 
     if req.layer_type == "currents":
@@ -804,13 +839,18 @@ def get_layer_data(req: LayerRequest):
         }
 
         if has_scenario:
-            payload["scenario"] = {
-                "scenario_nome": scenario_label,
+            scenario_meta = {
                 "multiplier": req.scenario.multiplier,
                 "function": req.scenario.function,
                 "function_params": req.scenario.function_params,
                 "variables": req.scenario.variables,
             }
+            if req.scenario_id is not None:
+                scenario_meta["scenario_id"] = req.scenario_id
+            if scenario_label is not None:
+                scenario_meta["scenario_name"] = scenario_label
+                scenario_meta["scenario_nome"] = scenario_label
+            payload["scenario"] = scenario_meta
             payload["source"] = "copernicus+scenario"
         else:
             payload["source"] = "copernicus"
@@ -924,6 +964,28 @@ def get_cached_layer_payload(cache_key: str):
         if not row:
             raise HTTPException(status_code=404, detail="Cache key not found")
         payload = row[0] if isinstance(row[0], dict) else {}
+        # Normalizza e arricchisci scenario
+        if isinstance(payload.get("scenario"), dict):
+            sc = payload["scenario"]
+            # Normalizza vecchi record che usavano la chiave italiana
+            if "scenario_nome" in sc:
+                label_val = sc.pop("scenario_nome")
+                if label_val is not None:
+                    sc["scenario_name"] = label_val
+            # Se manca scenario_name ma c'è scenario_id, recupera la label dal DB
+            if sc.get("scenario_name") is None and sc.get("scenario_id") is not None:
+                cur.execute(
+                    "SELECT label FROM weather_scenarios WHERE id = %s",
+                    (sc["scenario_id"],),
+                )
+                sc_row = cur.fetchone()
+                if sc_row and sc_row[0]:
+                    sc["scenario_name"] = sc_row[0]
+            # Rimuovi scenario_name se ancora null
+            if sc.get("scenario_name") is None:
+                sc.pop("scenario_name", None)
+            else:
+                sc["scenario_nome"] = sc["scenario_name"]
         payload["source"] = "db_cache"
         payload["cache_key"] = cache_key
         payload["cached_at"] = row[1].isoformat() if row[1] else None
@@ -975,6 +1037,7 @@ def list_scenarios():
     "/internal/weather/scenarios",
     tags=["Scenari"],
     summary="Crea uno scenario personalizzato",
+    status_code=201,
     description=(
         "Salva un nuovo scenario what-if nel database. Lo scenario può essere "
         "riutilizzato nelle richieste layer specificando il suo 'id' nel campo "

@@ -20,14 +20,14 @@ def _post_json(base_url: str, path: str, payload: dict, timeout: float = 6.0):
     url = f"{base_url.rstrip('/')}{path}"
     try:
         response = requests.post(url, json=payload, timeout=timeout)
-    except requests.RequestException:
-        return None  # fallback silenzioso: il cascade è best-effort
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=503, detail=f"Internal dependency unavailable: {base_url}") from exc
     if response.status_code >= 400:
-        return None
+        raise HTTPException(status_code=503, detail=f"Internal dependency error: {base_url}")
     try:
         return response.json()
-    except Exception:
-        return None
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Invalid internal response from {base_url}") from exc
 
 
 @app.get("/health")
@@ -141,15 +141,44 @@ def modifica_porto(data: dict):
 
 @app.post("/internal/porto/elimina")
 def elimina_porto(data: dict):
+    porto_id = data.get("id")
+    if not porto_id:
+        raise HTTPException(status_code=400, detail="id porto obbligatorio")
+
     conn = get_connection()
     cur = conn.cursor()
     try:
-        cur.execute("DELETE FROM porto WHERE id = %s RETURNING id;", (data.get("id"),))
+        cur.execute("SELECT id FROM porto WHERE id = %s", (porto_id,))
+        if cur.fetchone() is None:
+            raise HTTPException(404, "Porto non trovato")
+
+        cur.execute(
+            """
+            SELECT id
+            FROM tratta
+            WHERE porto_partenza_id = %s OR porto_arrivo_id = %s;
+            """,
+            (porto_id, porto_id),
+        )
+        tratta_ids = [str(r[0]) for r in cur.fetchall()]
+
+        for tratta_id in tratta_ids:
+            _post_json(OPERATIVO_SERVICE_URL, "/internal/corsa/elimina_by_tratta", {"tratta_id": tratta_id})
+
+        cur.execute(
+            """
+            DELETE FROM tratta
+            WHERE porto_partenza_id = %s OR porto_arrivo_id = %s;
+            """,
+            (porto_id, porto_id),
+        )
+
+        cur.execute("DELETE FROM porto WHERE id = %s RETURNING id;", (porto_id,))
         row = cur.fetchone()
         conn.commit()
         if row is None:
             raise HTTPException(404, "Porto non trovato")
-        return {"id": data.get("id"), "esito": "eliminato"}
+        return {"id": porto_id, "esito": "eliminato", "tratte_eliminate": len(tratta_ids)}
     finally:
         cur.close()
         conn.close()

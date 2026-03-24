@@ -232,6 +232,7 @@ def optimize():
         tollerance_minutes = int(payload.get("tollerance", 60))
         vessel_signature = vessel["id"]
         scenario = payload.get("scenario", None)
+        scenario_id = payload.get("scenario_id", None)
 
         result = optimize_route(
             vessel_id=vessel["id"],
@@ -264,6 +265,7 @@ def optimize():
             tollerance_minutes=tollerance_minutes,
             vessel_signature=vessel_signature,
             scenario=scenario,
+            scenario_id=scenario_id,
         )
 
         percorsi = convert_optimizer_output_to_percorsi(result)
@@ -323,6 +325,7 @@ def optimizelist():
             tollerance_minutes = int(job.get("tollerance", 60))
             vessel_signature = vessel.get("id", "default_vessel")
             scenario = job.get("scenario", None)
+            scenario_id = job.get("scenario_id", None)
 
             result = optimize_route(
                 vessel_id=vessel["id"],
@@ -353,6 +356,7 @@ def optimizelist():
                 tollerance_minutes=tollerance_minutes,
                 vessel_signature=vessel_signature,
                 scenario=scenario,
+                scenario_id=scenario_id,
             )
 
             percorsi = convert_optimizer_output_to_percorsi(result)

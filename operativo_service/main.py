@@ -745,10 +745,7 @@ def elimina_corse_by_tratta(data: dict):
             conn_a.close()
     # Elimina i percorsi nel servizio percorsi
     for cid in corsa_ids:
-        try:
-            _post_json(PERCORSI_SERVICE_URL, "/internal/percorso/elimina_by_corsa", {"corsa_id": cid})
-        except HTTPException:
-            pass
+        _post_json(PERCORSI_SERVICE_URL, "/internal/percorso/elimina_by_corsa", {"corsa_id": cid})
     # Elimina le corse
     conn2 = get_connection()
     cur2 = conn2.cursor()
