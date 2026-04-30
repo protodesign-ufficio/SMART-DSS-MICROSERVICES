@@ -1,4 +1,5 @@
 import json
+import time
 import requests
 import math
 from requests.adapters import HTTPAdapter
@@ -33,6 +34,7 @@ def build_and_run_simulation(data: SimulationBuildInput):
     # Risolvi sim_speed_factor: usa config se non fornito, altrimenti aggiorna config
     if data.sim_speed_factor is not None:
         KAFKA_CONFIG["sim_speed_factor"] = data.sim_speed_factor
+        KAFKA_CONFIG["last_update"] = time.time()
         effective_sim_speed_factor = data.sim_speed_factor
     else:
         effective_sim_speed_factor = KAFKA_CONFIG["sim_speed_factor"]
@@ -235,6 +237,7 @@ def simula_piano(data):
     # Risolvi sim_speed_factor: usa config se non fornito, altrimenti aggiorna config
     if data.sim_speed_factor is not None:
         KAFKA_CONFIG["sim_speed_factor"] = data.sim_speed_factor
+        KAFKA_CONFIG["last_update"] = time.time()
         effective_sim_speed_factor = data.sim_speed_factor
     else:
         effective_sim_speed_factor = KAFKA_CONFIG["sim_speed_factor"]

@@ -439,6 +439,36 @@ def lista_assegnazioni_by_piano(piano_id: str):
         conn.close()
 
 
+@app.get("/internal/assegnazione/in_corso")
+def lista_assegnazioni_in_corso():
+    """Return only IN_CORSO assignments — lightweight, no HTTP calls to percorsi."""
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT a.id, a.piano_id, a.percorso_id, a.stato_esecuzione, a.virtuale
+            FROM assegnazione a
+            WHERE a.stato_esecuzione = 'IN_CORSO'
+            ORDER BY a.id;
+            """
+        )
+        rows = cur.fetchall()
+        return [
+            {
+                "id": str(r[0]),
+                "piano_id": str(r[1]) if r[1] else None,
+                "percorso_id": str(r[2]),
+                "stato_esecuzione": r[3],
+                "virtuale": r[4],
+            }
+            for r in rows
+        ]
+    finally:
+        cur.close()
+        conn.close()
+
+
 @app.get("/internal/assegnazione/{assegnazione_id}")
 def get_assegnazione_by_id(assegnazione_id: str):
     conn = get_connection()

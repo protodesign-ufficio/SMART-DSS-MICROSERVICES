@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from typing import List
 from datetime import timedelta
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 from app.core.database import get_connection
 from app.core.anagrafica_client import delegation_enabled, get_json, post_json, AnagraficaDelegationError
@@ -222,34 +223,45 @@ Oggetto contenente:
 def get_percorso_attivo_by_mmsi(mmsi: str):
     if delegation_enabled():
         try:
-            vascello = get_json(f"/internal/vascello/by_mmsi/{mmsi}")
+            # 1) Parallel: fetch vascello + all IN_CORSO assignments
+            vascello = None
+            in_corso = None
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                fut_v = pool.submit(get_json, f"/internal/vascello/by_mmsi/{mmsi}")
+                fut_a = pool.submit(operativo_get_json, "/internal/assegnazione/in_corso")
+                vascello = fut_v.result()
+                in_corso = fut_a.result() or []
+
             if vascello is None:
                 raise HTTPException(404, f"Vascello con MMSI {mmsi} non trovato")
 
             vascello_id = str(vascello.get("id"))
-            piani = operativo_get_json("/internal/piano/lista") or []
 
-            active_assignments = []
-            for piano in piani:
-                for assegnazione in (piano.get("assegnazioni") or []):
-                    if str(assegnazione.get("vascello_id")) == vascello_id and assegnazione.get("stato_esecuzione") == "IN_CORSO":
-                        active_assignments.append(assegnazione)
+            # 2) Filter active assignments for this vascello's percorsi
+            #    We need percorso details to check vascello_id, so fetch them in parallel
+            candidate_assignments = [a for a in in_corso if a.get("percorso_id")]
 
-            if not active_assignments:
-                raise HTTPException(404, f"Nessun percorso attivo per il vascello {vascello.get('nome')}")
+            def fetch_percorso_with_corsa(assegnazione):
+                percorso_id = assegnazione["percorso_id"]
+                percorso = percorsi_get_json(f"/internal/percorso/{percorso_id}?include=corsa")
+                return assegnazione, percorso
 
+            percorso_results = []
+            with ThreadPoolExecutor(max_workers=6) as pool:
+                futures = [pool.submit(fetch_percorso_with_corsa, a) for a in candidate_assignments]
+                for fut in as_completed(futures):
+                    percorso_results.append(fut.result())
+
+            # 3) Build response — filter by vascello_id and assemble
             percorsi_list = []
-            for assegnazione in active_assignments:
-                percorso_id = assegnazione.get("percorso_id")
-                if not percorso_id:
-                    continue
-
-                percorso = percorsi_get_json(f"/internal/percorso/{percorso_id}")
+            for assegnazione, percorso in percorso_results:
                 if not isinstance(percorso, dict):
                     continue
+                if str(percorso.get("vascello_id")) != vascello_id:
+                    continue
 
+                corsa = percorso.get("corsa") or {}
                 corsa_id = percorso.get("corsa_id")
-                corsa = operativo_get_json(f"/internal/corsa/id/{corsa_id}") if corsa_id else {}
 
                 tempo_percorrenza = percorso.get("tempo_percorrenza")
                 try:
@@ -270,7 +282,7 @@ def get_percorso_attivo_by_mmsi(mmsi: str):
                         "virtuale": bool(assegnazione.get("virtuale")),
                     },
                     "percorso": {
-                        "id": str(percorso.get("id")),
+                        "id": str(percorso.get("percorso_id") or percorso.get("id")),
                         "corsa_id": str(corsa_id) if corsa_id else "",
                         "orario_partenza_schedulato": corsa.get("orario_partenza_schedulato") or "",
                         "tratta_id": str(corsa.get("tratta_id")) if corsa.get("tratta_id") else "",

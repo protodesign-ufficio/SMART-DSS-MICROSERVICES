@@ -2,6 +2,7 @@ import math
 
 # --- Simulation Constants ---
 SIM_TIME_STEP = 0.1 # Simulation time step in seconds
+AIS_SEND_INTERVAL = 0.5  # Intervallo minimo (secondi simulati) tra messaggi AIS per nave
 TRAJECTORY_LENGTH = 100 # Number of past points to store for trajectory
 
 # --- Constants for Waypoints ---

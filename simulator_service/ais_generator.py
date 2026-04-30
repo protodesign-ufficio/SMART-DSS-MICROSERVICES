@@ -7,57 +7,140 @@ from typing import Union, List, Optional
 from pyais.encode import encode_dict
 import json 
 import threading
+import queue
 
 # ——— UDP Config ———
 UDP_IP = "127.0.0.1"
 UDP_IP_Demo = "192.168.1.167"
 UDP_PORT = 10110
 _sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+_sock.settimeout(0.05)  # 50ms timeout per evitare blocchi
 TELEGRAF_UDP_IP = "87.26.178.190"
 TELEGRAF_UDP_PORT = 15100
 sock_telegraf = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock_telegraf.settimeout(0.1)  # 100ms timeout per Telegraf remoto
 
-# Lock per thread-safety nell'invio AIS
-_ais_send_lock = threading.Lock()
+# Coda asincrona per invio AIS senza bloccare i thread di simulazione
+_ais_queue = queue.Queue(maxsize=20000)
+
+# Contatori diagnostici per monitorare perdite di messaggi
+_ais_drop_count = 0
+_ais_drop_lock = threading.Lock()
+_ais_sent_count = 0
+
+def get_ais_queue_stats():
+    """Ritorna statistiche sulla coda AIS per diagnostica."""
+    return {
+        "queue_size": _ais_queue.qsize(),
+        "queue_maxsize": _ais_queue.maxsize,
+        "dropped": _ais_drop_count,
+        "sent": _ais_sent_count,
+    }
+
+def _ais_sender_worker():
+    """Thread background che consuma la coda e invia i messaggi AIS."""
+    global _ais_sent_count
+    _consecutive_errors = 0
+    while True:
+        try:
+            sentence, is_virtual, is_ghost = _ais_queue.get(timeout=1.0)
+        except queue.Empty:
+            continue
+        try:
+            _do_send(sentence, is_virtual, is_ghost)
+            _ais_sent_count += 1
+            _consecutive_errors = 0
+        except Exception as e:
+            _consecutive_errors += 1
+            if _consecutive_errors <= 3 or _consecutive_errors % 100 == 0:
+                print(f"[AIS WORKER ERROR #{_consecutive_errors}] {e}")
+        finally:
+            _ais_queue.task_done()
+
+_ais_sender_thread = threading.Thread(target=_ais_sender_worker, daemon=True)
+_ais_sender_thread.start()
 
 # ——— Funzione di invio NMEA ———
+def _do_send(sentence: str, is_virtual: bool, is_ghost: bool) -> None:
+    """Invio effettivo (chiamato dal worker thread)."""
+    # sentence può contenere più righe NMEA (multipart, separate da \n)
+    lines = sentence.strip().split("\n")
+
+    # 1. OpenCPN (Legacy) — invia ogni riga NMEA singolarmente (protocollo UDP)
+    for line in lines:
+        try:
+            encoded = (line.strip() + "\r\n").encode('ascii')
+            _sock.sendto(encoded, (UDP_IP, UDP_PORT))
+            _sock.sendto(encoded, (UDP_IP_Demo, UDP_PORT))
+        except socket.timeout:
+            pass  # Non bloccare se OpenCPN non risponde
+        except Exception:
+            pass
+
+    # 2. Telegraf (Nuova Integrazione) — invia come singolo messaggio
+    try:
+        if is_ghost:
+            topic = "ais_ghost.raw"
+        elif is_virtual:
+            topic = "ais_simulation.raw"
+        else:
+            topic = "ais.raw"
+
+        payload = {
+            "kafka_topic": topic,
+            "value": sentence.strip()
+        }
+
+        sock_telegraf.sendto(json.dumps(payload).encode('utf-8'), (TELEGRAF_UDP_IP, TELEGRAF_UDP_PORT))
+        #print(f"[AIS SENT -> {topic}] {lines[0][:30]}... ({len(lines)} part(s))")
+    except socket.timeout:
+        print(f"[AIS TIMEOUT] Telegraf non raggiungibile, messaggio scartato")
+    except Exception as e:
+        print(f"Telegraf Send Error: {e}")
+
+
 def send_ais_sentence(sentence: str, is_virtual: bool = False, is_ghost: bool = False) -> None:
     """
-    Invia NMEA:
-    1. Raw a OpenCPN (come prima)
-    2. JSON Envelope a Telegraf (per Kafka Dashboard)
-    
-    Args:
-        sentence: la frase NMEA da inviare
-        is_virtual: True per navi virtuali (topic ais_simulation.raw)
-        is_ghost: True per navi ghost (topic ais_ghost.raw)
+    Accoda il messaggio AIS per invio asincrono.
+    Non blocca mai il thread di simulazione.
     """
-    with _ais_send_lock:
-        # 1. OpenCPN (Legacy)
-        try:
-            _sock.sendto((sentence + "\r\n").encode('ascii'), (UDP_IP, UDP_PORT))
-            _sock.sendto((sentence + "\r\n").encode('ascii'), (UDP_IP_Demo, UDP_PORT))
-        except: pass
+    global _ais_drop_count
+    try:
+        _ais_queue.put_nowait((sentence, is_virtual, is_ghost))
+    except queue.Full:
+        with _ais_drop_lock:
+            _ais_drop_count += 1
+            dc = _ais_drop_count
+        if dc % 100 == 1:
+            print(f"[AIS QUEUE FULL] Messaggio AIS scartato (totale drop: {dc}, qsize: {_ais_queue.maxsize})")
 
-        # 2. Telegraf (Nuova Integrazione)
-        try:
-            # Determina il topic in base ai flag passati come parametri
-            if is_ghost:
-                topic = "ais_ghost.raw"
-            elif is_virtual:
-                topic = "ais_simulation.raw"
-            else:
-                topic = "ais.raw"
 
-            payload = {
-                "kafka_topic": topic,
-                "value": sentence.strip()
-            }
+def send_ais_multipart(sentences: list, is_virtual: bool = False, is_ghost: bool = False) -> None:
+    """
+    Invia un messaggio AIS multipart (es. Type 5) come singolo messaggio Kafka.
+    Tutti i frammenti NMEA vengono concatenati (\n) in un unico payload Telegraf/Kafka
+    in modo che il consumer possa decodificarli insieme.
+    L'invio UDP (OpenCPN) resta per-frammento (come da protocollo NMEA).
+    """
+    global _ais_drop_count
+    if not sentences:
+        return
 
-            sock_telegraf.sendto(json.dumps(payload).encode('utf-8'), (TELEGRAF_UDP_IP, TELEGRAF_UDP_PORT))
-            print(f"[AIS SENT -> {topic}] {sentence[:30]}...")
-        except Exception as e:
-            print(f"Telegraf Send Error: {e}")
+    # Se single-part, usa il percorso normale
+    if len(sentences) == 1:
+        send_ais_sentence(sentences[0], is_virtual, is_ghost)
+        return
+
+    # Multipart: concatena per Telegraf/Kafka, invia singoli per UDP
+    concatenated = "\n".join(s.strip() for s in sentences)
+    try:
+        _ais_queue.put_nowait((concatenated, is_virtual, is_ghost))
+    except queue.Full:
+        with _ais_drop_lock:
+            _ais_drop_count += 1
+            dc = _ais_drop_count
+        if dc % 100 == 1:
+            print(f"[AIS QUEUE FULL] Messaggio AIS multipart scartato (totale drop: {dc})")
 
 # ——— “Struct” per i parametri ———
 @dataclass
@@ -224,6 +307,20 @@ def _encode_payload_type5(p: StaticVoyageParams) -> tuple[str, int]:
     return "".join(payload), fill_bits
 
 
+# Contatore globale per ID sequenziale dei messaggi multipart NMEA
+# Ruota tra 0-9 per evitare collisioni quando più vascelli inviano Type 5 contemporaneamente
+_multipart_seq_id = 0
+_multipart_seq_lock = threading.Lock()
+
+def _next_multipart_seq_id() -> int:
+    """Ritorna il prossimo ID sequenziale per messaggi multipart (0-9, thread-safe)."""
+    global _multipart_seq_id
+    with _multipart_seq_lock:
+        seq = _multipart_seq_id
+        _multipart_seq_id = (_multipart_seq_id + 1) % 10
+    return seq
+
+
 def generate_static_voyage_report(params: StaticVoyageParams) -> List[str]:
     """
     Genera le frasi NMEA AIVDM per un messaggio AIS Type 5
@@ -238,8 +335,11 @@ def generate_static_voyage_report(params: StaticVoyageParams) -> List[str]:
     total = len(frags)
     sentences = []
 
+    # Usa ID sequenziale univoco per evitare collisioni multipart tra vascelli diversi
+    seq_id = _next_multipart_seq_id()
+
     for idx, frag in enumerate(frags, start=1):
-        body = f"{params.talker_id},{total},{idx},0,{params.radio_channel},{frag},{fill_bits if idx == total else 0}"
+        body = f"{params.talker_id},{total},{idx},{seq_id},{params.radio_channel},{frag},{fill_bits if idx == total else 0}"
         cs = _nmea_checksum(body)
         sentence = f"!{body}*{cs}"
         sentences.append(sentence)

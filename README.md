@@ -124,7 +124,7 @@ SMART-DSS/
 │   └── requirements.txt
 ├── simulator_service/          # Servizio simulazione (Flask)
 │   ├── sim_server.py           # Server Flask (:5001)
-│   ├── simulation_service.py   # Engine simulazione (RAFLAC physics)
+│   ├── simulation_service.py   # Engine simulazione (engine physics)
 │   ├── vessel.py               # Modello vessel fisico
 │   ├── ais_generator.py        # Generatore dati AIS
 │   ├── Api_Copernicus.py       # Client API Copernicus

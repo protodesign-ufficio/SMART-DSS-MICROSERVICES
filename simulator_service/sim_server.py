@@ -14,9 +14,17 @@ app = Flask(__name__)
 # Dizionario per gestire simulazioni multiple, chiave = simulation_id
 simulations = {}
 simulations_lock = threading.Lock()
+MAX_CONCURRENT_SIMULATIONS = 10  # Limite massimo simulazioni concorrenti
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATASET_PATH = os.path.join(BASE_DIR, "copernicus-data", "test.nc")
+
+def _cleanup_finished_simulations():
+    """Rimuove le simulazioni terminate dal dizionario (chiamare con lock acquisito)."""
+    finished = [sid for sid, eng in simulations.items() if not eng.running]
+    for sid in finished:
+        del simulations[sid]
+        print(f"[CLEANUP] Simulazione {sid} rimossa (terminata)")
 
 @app.route("/simulate/start", methods=["POST"])
 def start_simulation():
@@ -34,8 +42,12 @@ def start_simulation():
 
     # Verifica se esiste già una simulazione con questo ID
     with simulations_lock:
+        _cleanup_finished_simulations()
         if simulation_id in simulations:
             return jsonify({"ok": False, "error": f"Simulation {simulation_id} already exists"}), 400
+        active_count = sum(1 for eng in simulations.values() if eng.running)
+        if active_count >= MAX_CONCURRENT_SIMULATIONS:
+            return jsonify({"ok": False, "error": f"Limite massimo di {MAX_CONCURRENT_SIMULATIONS} simulazioni raggiunto"}), 429
 
     vessels = []
     GHOST_MMSI_OFFSET = 500000000

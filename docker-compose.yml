@@ -45,6 +45,9 @@ services:
       - weather
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    networks:
+      - default
+      - kafka-net
 
   simulator:
     build:

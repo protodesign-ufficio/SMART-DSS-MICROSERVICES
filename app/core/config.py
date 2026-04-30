@@ -102,7 +102,7 @@ Gestione dei piani operativi con ciclo di vita:
         "name": "Simulazione",
         "description": """**Simulatore fisico di navigazione**
         
-Simulazione realistica della navigazione con motore fisico RAFLAC:
+Simulazione realistica della navigazione con motore fisico:
 - Modello fisico con timestep configurabile
 - Coordinate di partenza automatiche o personalizzate
 - Integrazione con servizio simulatore esterno (Flask :5001)

@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 import math
-from ais_generator import PositionReportParams, StaticVoyageParams, generate_position_report, generate_static_voyage_report, send_ais_sentence
+from ais_generator import PositionReportParams, StaticVoyageParams, generate_position_report, generate_static_voyage_report, send_ais_sentence, send_ais_multipart
 import numpy as np
 import constants
 from waypoint import Waypoint, WaypointType
@@ -83,12 +83,13 @@ class Vessel:
         self.is_ghost = False
         self.ais_stopped = False  # Flag per tracciare se l'invio AIS è stato interrotto
         self.virtuale = True  # True = ais_simulation.raw, False = ais.raw
+        self._last_ais_send_time = -999.0  # Ultimo tempo simulato in cui è stato inviato AIS
 
     
     def add_waypoint(self, waypoint):
         """Aggiunge un waypoint alla lista dei waypoint della nave."""
         self.waypoints.append(waypoint)
-        print(f"{self.name}: Added waypoint: {waypoint.x}, {waypoint.y}, Type: {waypoint.type}, Pa: {waypoint.Pa}, Vr: {waypoint.Vr}")
+        #print(f"{self.name}: Added waypoint: {waypoint.x}, {waypoint.y}, Type: {waypoint.type}, Pa: {waypoint.Pa}, Vr: {waypoint.Vr}")
 
 
     def clear_waypoints(self):
@@ -168,7 +169,7 @@ class Vessel:
         self.waypoints = new_waypoints
         
         interpolated_count = len(self.waypoints) - original_count
-        print(f"{self.name}: Interpolated {interpolated_count} virtual waypoints (total: {len(self.waypoints)})")
+        #print(f"{self.name}: Interpolated {interpolated_count} virtual waypoints (total: {len(self.waypoints)})")
 
     def update_raflac(self, dt, current_time, dataset, sim_speed_factor=1.0):
             """
@@ -193,11 +194,11 @@ class Vessel:
                     self.target_heading = math.atan2(dy, dx)
                     
                     # Stampa distanza dal waypoint corrente
-                    print(f"[NAV] {self.name}: WP{self.current_waypoint_index + 1}/{len(self.waypoints)} | dist={distance_to_waypoint:.1f}m | heading={math.degrees(self.heading):.1f}° → target={math.degrees(self.target_heading):.1f}°")
+                    #print(f"[NAV] {self.name}: WP{self.current_waypoint_index + 1}/{len(self.waypoints)} | dist={distance_to_waypoint:.1f}m | heading={math.degrees(self.heading):.1f}° → target={math.degrees(self.target_heading):.1f}°")
                     
                     # --- Controllo della velocità ---
                     if target_waypoint.type == WaypointType.STOP and distance_to_waypoint <= self.speed*self.mass/self.drag_coeff:
-                        print("DEBUG, ingresso nel raggio: ", STOP_WAYPOINT_STOPPING_DISTANCE, "distanza: ", distance_to_waypoint)
+                        #print("DEBUG, ingresso nel raggio: ", STOP_WAYPOINT_STOPPING_DISTANCE, "distanza: ", distance_to_waypoint)
                         # Reduce throttle linearly as we get closer to the stop waypoint
                         # from full throttle at STOP_WAYPOINT_STOPPING_DISTANCE to 0 at WAYPOINT_REACHED_THRESHOLD
                         throttle_reduction = (STOP_WAYPOINT_STOPPING_DISTANCE - distance_to_waypoint) / \
@@ -207,7 +208,7 @@ class Vessel:
                     else:
                         # --- controllo con Vref ---
                         if hasattr(target_waypoint, "Vr") and target_waypoint.Vr is not None:
-                            print("Vr calcolato:", target_waypoint.Vr)
+                            #print("Vr calcolato:", target_waypoint.Vr)
                             vx_ref, vy_ref = target_waypoint.Vr
                             speed_ref = math.sqrt(vx_ref**2 + vy_ref**2)
                         else: 
@@ -225,26 +226,26 @@ class Vessel:
                     # Check if waypoint is reached
                     if distance_to_waypoint < WAYPOINT_REACHED_THRESHOLD:
                         target_waypoint.reached = True
-                        print(f"{self.name}: Reached waypoint {self.current_waypoint_index + 1}")
+                        #print(f"{self.name}: Reached waypoint {self.current_waypoint_index + 1}")
 
                         if target_waypoint.type == WaypointType.STOP:
                             self.vessel_state = VesselState.STOPPING_AT_WAYPOINT
                             self.throttle = 0.0 # Stop the vessel immediately
                             self.current_stop_time = 0.0 # Reset stop timer
-                            print(f"{self.name}: Stopping at waypoint {self.current_waypoint_index + 1} for {target_waypoint.stop_duration} seconds.")
+                            #print(f"{self.name}: Stopping at waypoint {self.current_waypoint_index + 1} for {target_waypoint.stop_duration} seconds.")
                         else: # Walkthrough waypoint
                             self.current_waypoint_index += 1
                             if self.current_waypoint_index >= len(self.waypoints):
                                 self.vessel_state = VesselState.FINISHED_WAYPOINTS
                                 self.throttle = 0.0 # Stop the vessel once all waypoints are finished
-                                print(f"{self.name}: Finished all waypoints.")
+                                #print(f"{self.name}: Finished all waypoints.")
                             else:
-                                print(f"{self.name}: Moving to next waypoint {self.current_waypoint_index + 1}.")
+                                pass #print(f"{self.name}: Moving to next waypoint {self.current_waypoint_index + 1}.")
 
                 else: # Should not happen if state is MOVING_TO_WAYPOINT but no waypoints left
                     self.vessel_state = VesselState.FINISHED_WAYPOINTS
                     self.throttle = 0.0
-                    print(f"{self.name}: No waypoints to move to, state was MOVING_TO_WAYPOINT.")
+                    #print(f"{self.name}: No waypoints to move to, state was MOVING_TO_WAYPOINT.")
 
             elif self.vessel_state == VesselState.STOPPING_AT_WAYPOINT:
                 # Maintain stopped state and wait for stop duration
@@ -252,14 +253,14 @@ class Vessel:
                 self.current_stop_time += dt
 
                 if self.current_stop_time >= self.waypoints[self.current_waypoint_index].stop_duration:
-                    print(f"{self.name}: Finished stopping at waypoint {self.current_waypoint_index + 1}.")
+                    #print(f"{self.name}: Finished stopping at waypoint {self.current_waypoint_index + 1}.")
                     self.current_waypoint_index += 1
                     if self.current_waypoint_index >= len(self.waypoints):
                         self.vessel_state = VesselState.FINISHED_WAYPOINTS
-                        print(f"{self.name}: Finished all waypoints.")
+                        #print(f"{self.name}: Finished all waypoints.")
                     else:
                         self.vessel_state = VesselState.MOVING_TO_WAYPOINT
-                        print(f"{self.name}: Moving to next waypoint {self.current_waypoint_index + 1}.")
+                        #print(f"{self.name}: Moving to next waypoint {self.current_waypoint_index + 1}.")
 
             elif self.vessel_state == VesselState.WAITING_AT_WAYPOINT:
                 # This state is currently not used, but could be for more complex waiting logic
@@ -335,7 +336,13 @@ class Vessel:
                     self.ais_stopped = True
                 return
             
-            #print("Invio messaggio AIS NMEA per nave:", self.name, "con MMSI:", self.mmsi, "TIPO: " ,type(self.mmsi))
+            # Throttling AIS: invia solo ogni AIS_SEND_INTERVAL secondi simulati
+            # Riduce da ~100 msg/s a ~2 msg/s per nave, evitando saturazione Kafka/consumer
+            if current_time - self._last_ais_send_time < constants.AIS_SEND_INTERVAL:
+                # Aggiorna comunque la predizione posizione
+                self.predicted_position = self.predict_position(dt*100)
+                return
+            self._last_ais_send_time = current_time
             try:
                 now = datetime.utcnow()
                 # Usa mmsi_originale per l'invio a Telegraf
@@ -360,7 +367,7 @@ class Vessel:
             # AIS TYPE 5 ogni 5 minuti (300 sec) o all'inizio
             #print("current_time: ", current_time, " dt: ", dt)
             if current_time == 0.0 or (current_time % 10 < dt):
-                print("Invio AIS TYPE 5 per nave:", self.name)
+                #print("Invio AIS TYPE 5 per nave:", self.name)
                 self.send_static_ais(sim_speed_factor)
 
             # Prevede la posizione futura e aggiorna la logica della nave
@@ -445,7 +452,7 @@ class Vessel:
         )
 
         #print("x e y", vessel.x, vessel.y, "lat e lon:", constants.xy_to_latlon(vessel.x, vessel.y))
-        print("Creata nave da dict:", vessel.name, " - mmsi: ", vessel.mmsi)
+        #print("Creata nave da dict:", vessel.name, " - mmsi: ", vessel.mmsi)
 
         vessel.throttle = data.get("throttle", 0.0)
         vessel.target_heading = data.get("target_heading", data["heading"])
@@ -481,7 +488,7 @@ class Vessel:
 
                 wp_type = WaypointType(wp_data.get("type", WaypointType.WALKTHROUGH.value))
                 stop_duration = wp_data.get("stop_duration", 0)
-                print("Aggiungo waypoint da dict:", wp_data)
+                #print("Aggiungo waypoint da dict:", wp_data)
 
                 vessel.add_waypoint(
                     Waypoint(
@@ -531,7 +538,7 @@ class Vessel:
             print(f"[TYPE5 ERROR] ETA computation failed for {self.name}: {e}")
             return
 
-        print(f"[DEBUG ETA] Computed ETA: {eta_dt}")
+        #print(f"[DEBUG ETA] Computed ETA: {eta_dt}")
 
         try:
             # Usa mmsi_originale per l'invio a Telegraf
@@ -553,11 +560,12 @@ class Vessel:
                 destination=self.destination[:20].upper()
             )
 
-            # Passa i flag come parametri (thread-safe)
-            for frag in generate_static_voyage_report(stat_cfg):
-                print(f"[TYPE5 SEND] {self.name} virtual={self.virtuale} ghost={self.is_ghost} → {frag}")
-                send_ais_sentence(frag, is_virtual=self.virtuale, is_ghost=self.is_ghost)
-                print(f"[TYPE5 SENT] {frag}")
+            # Invia tutti i frammenti come singolo messaggio Kafka (evita collisioni multipart)
+            sentences = generate_static_voyage_report(stat_cfg)
+            #for frag in sentences:
+            #    print(f"[TYPE5 SEND] {self.name} virtual={self.virtuale} ghost={self.is_ghost} → {frag}")
+            send_ais_multipart(sentences, is_virtual=self.virtuale, is_ghost=self.is_ghost)
+            #print(f"[TYPE5 SENT] {self.name} ({len(sentences)} frammenti bundled)")
 
         except Exception as e:
             print(f"[TYPE5 ERROR] {self.name}: {e}")
