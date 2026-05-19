@@ -1,3 +1,5 @@
+import time
+
 import requests
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -120,10 +122,19 @@ class WeatherLayerRequest(BaseModel):
 
 def _post_weather(path: str, payload: dict, timeout: float = 60.0):
     url = f"{WEATHER_SERVICE_URL.rstrip('/')}{path}"
+    t0 = time.perf_counter()
     try:
         response = requests.post(url, json=payload, timeout=timeout)
     except requests.RequestException as exc:
         raise HTTPException(status_code=503, detail="Weather service unavailable") from exc
+    elapsed_ms = int((time.perf_counter() - t0) * 1000)
+    if path == "/internal/weather/layer":
+        print(
+            "[WeatherProxy] layer "
+            f"type={payload.get('layer_type')} ts={payload.get('timestamp')} "
+            f"use_cache={payload.get('use_cache')} force_refresh={payload.get('force_refresh')} "
+            f"status={response.status_code} elapsed_ms={elapsed_ms}"
+        )
 
     if response.status_code >= 400:
         detail = response.text
@@ -298,9 +309,19 @@ Quando uno scenario è attivo la risposta include `source: 'copernicus+scenario'
         503: {"description": "Weather service non raggiungibile"},
     },
 )
+@router.post(
+    "/weather/layer/",
+    include_in_schema=False,
+)
 def weather_layer(payload: WeatherLayerRequest):
     """Proxy POST verso /internal/weather/layer del weather service."""
-    return _post_weather("/internal/weather/layer", payload.model_dump(exclude_none=True), timeout=90.0)
+    body = payload.model_dump(exclude_none=True)
+    # Livingmap is interactive: never let stale client flags force a blocking
+    # Copernicus fetch when a slot-level cache can serve the same model data.
+    body["use_cache"] = True
+    body["save_cache"] = True
+    body["force_refresh"] = False
+    return _post_weather("/internal/weather/layer", body, timeout=90.0)
 
 
 @router.get(

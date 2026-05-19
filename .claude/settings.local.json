@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -E \"\\\\.\\(json|yaml|yml\\)$\")",
+      "PowerShell(Get-ChildItem -Path . | Where-Object { -not $_.PSIsContainer } | Select-Object Name)"
+    ]
+  }
+}

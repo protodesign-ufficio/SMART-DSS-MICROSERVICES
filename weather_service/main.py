@@ -4,8 +4,9 @@ import threading
 import json
 import hashlib
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import copernicusmarine
 import numpy as np
@@ -19,6 +20,7 @@ from typing import Optional
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _ensure_schema()
+    _start_layer_prewarm_thread()
     yield
 
 
@@ -46,6 +48,24 @@ _LAYER_CACHE_TTL_MIN = int(os.getenv("WEATHER_LAYER_CACHE_TTL_MIN", "120"))
 
 _login_lock = threading.Lock()
 _logged_in = False
+_layer_fetch_locks: dict[str, threading.Lock] = {}
+_layer_fetch_locks_guard = threading.Lock()
+
+_DEFAULT_LAYER_BOUNDS = {
+    "north": 40.76,
+    "south": 40.50,
+    "east": 14.90,
+    "west": 14.30,
+}
+_LAYER_TIME_BUCKET_MINUTES = {
+    "currents": 15,
+    "waves": 60,
+}
+_LAYER_PREWARM_ENABLED = os.getenv("WEATHER_LAYER_PREWARM_ENABLED", "true").lower() in {"1", "true", "yes", "on"}
+_LAYER_PREWARM_INTERVAL_SECONDS = int(os.getenv("WEATHER_LAYER_PREWARM_INTERVAL_SECONDS", "300"))
+_LAYER_PREWARM_TIMEZONE = os.getenv("WEATHER_LAYER_PREWARM_TIMEZONE", "Europe/Rome")
+_layer_prewarm_started = False
+_layer_prewarm_guard = threading.Lock()
 
 
 class Bounds(BaseModel):
@@ -235,12 +255,142 @@ def _bounds_to_dict(bounds: Bounds | None) -> dict | None:
     }
 
 
-def _cache_key_for_layer(req: LayerRequest) -> str:
-    payload = {
-        "layer_type": req.layer_type,
-        "timestamp": req.timestamp,
-        "bounds": _bounds_to_dict(req.bounds),
+def _normalized_bounds_for_layer_cache(bounds: Bounds | None) -> dict[str, float]:
+    if bounds:
+        north = bounds.north if bounds.north is not None else _DEFAULT_LAYER_BOUNDS["north"]
+        south = bounds.south if bounds.south is not None else _DEFAULT_LAYER_BOUNDS["south"]
+        east = bounds.east if bounds.east is not None else _DEFAULT_LAYER_BOUNDS["east"]
+        west = bounds.west if bounds.west is not None else _DEFAULT_LAYER_BOUNDS["west"]
+    else:
+        north = _DEFAULT_LAYER_BOUNDS["north"]
+        south = _DEFAULT_LAYER_BOUNDS["south"]
+        east = _DEFAULT_LAYER_BOUNDS["east"]
+        west = _DEFAULT_LAYER_BOUNDS["west"]
+
+    return {
+        "north": round(max(north, south), 6),
+        "south": round(min(north, south), 6),
+        "east": round(max(east, west), 6),
+        "west": round(min(east, west), 6),
     }
+
+
+def _round_timestamp_to_nearest_minutes(ts: pd.Timestamp, minutes: int) -> pd.Timestamp:
+    timestamp = pd.Timestamp(ts)
+    if timestamp.tzinfo is not None:
+        timestamp = timestamp.tz_convert("UTC")
+
+    step_ns = minutes * 60 * 1_000_000_000
+    rounded_ns = ((timestamp.value + step_ns // 2) // step_ns) * step_ns
+    rounded = pd.Timestamp(rounded_ns)
+    if ts.tzinfo is not None:
+        return rounded.tz_localize("UTC")
+    return rounded
+
+
+def _layer_time_cache_values(layer_type: str, timestamp: str | None) -> tuple[pd.Timestamp, str, str]:
+    target_time = pd.to_datetime(timestamp) if timestamp else pd.Timestamp(datetime.now())
+    bucket_minutes = _LAYER_TIME_BUCKET_MINUTES.get(layer_type, 60)
+    bucket_time = _round_timestamp_to_nearest_minutes(pd.Timestamp(target_time), bucket_minutes)
+    cache_timestamp = bucket_time.strftime("%Y-%m-%dT%H:%M:%S")
+    effective_timestamp = bucket_time.strftime("%Y-%m-%d %H:%M")
+    return target_time, cache_timestamp, effective_timestamp
+
+
+def _get_layer_fetch_lock(cache_key: str) -> threading.Lock:
+    with _layer_fetch_locks_guard:
+        lock = _layer_fetch_locks.get(cache_key)
+        if lock is None:
+            lock = threading.Lock()
+            _layer_fetch_locks[cache_key] = lock
+        return lock
+
+
+def _layer_dataset_config(layer_type: str) -> tuple[str, list[str]]:
+    if layer_type == "currents":
+        return "cmems_mod_med_phy-cur_anfc_4.2km_PT15M-i", ["uo", "vo"]
+    return "cmems_mod_med_wav_anfc_4.2km_PT1H-i", ["VMDR_WW", "VTM01_WW", "VHM0_WW"]
+
+
+def _default_layer_bounds_model() -> Bounds:
+    return Bounds(
+        north=_DEFAULT_LAYER_BOUNDS["north"],
+        south=_DEFAULT_LAYER_BOUNDS["south"],
+        east=_DEFAULT_LAYER_BOUNDS["east"],
+        west=_DEFAULT_LAYER_BOUNDS["west"],
+    )
+
+
+def _layer_prewarm_timestamps(now: datetime | None = None) -> dict[str, list[str]]:
+    if now is not None:
+        base = now
+    else:
+        try:
+            base = datetime.now(ZoneInfo(_LAYER_PREWARM_TIMEZONE)).replace(tzinfo=None)
+        except Exception:
+            base = datetime.now()
+    return {
+        "currents": [
+            base.isoformat(timespec="seconds"),
+            (base + timedelta(minutes=_LAYER_TIME_BUCKET_MINUTES["currents"])).isoformat(timespec="seconds"),
+        ],
+        "waves": [
+            base.isoformat(timespec="seconds"),
+            (base + timedelta(minutes=_LAYER_TIME_BUCKET_MINUTES["waves"])).isoformat(timespec="seconds"),
+        ],
+    }
+
+
+def _prewarm_layer_cache_once() -> None:
+    bounds = _default_layer_bounds_model()
+    for layer_type, timestamps in _layer_prewarm_timestamps().items():
+        for timestamp in timestamps:
+            try:
+                get_layer_data(
+                    LayerRequest(
+                        layer_type=layer_type,
+                        bounds=bounds,
+                        timestamp=timestamp,
+                        use_cache=True,
+                        save_cache=True,
+                        force_refresh=False,
+                    )
+                )
+            except Exception as exc:
+                print(f"[Weather prewarm] {layer_type} {timestamp} failed: {exc}")
+
+
+def _layer_prewarm_loop() -> None:
+    while True:
+        _prewarm_layer_cache_once()
+        threading.Event().wait(_LAYER_PREWARM_INTERVAL_SECONDS)
+
+
+def _start_layer_prewarm_thread() -> None:
+    global _layer_prewarm_started
+    if not _LAYER_PREWARM_ENABLED:
+        return
+    with _layer_prewarm_guard:
+        if _layer_prewarm_started:
+            return
+        thread = threading.Thread(target=_layer_prewarm_loop, name="weather-layer-prewarm", daemon=True)
+        thread.start()
+        _layer_prewarm_started = True
+
+
+def _cache_key_for_layer(
+    req: LayerRequest,
+    cache_timestamp: str,
+    cache_bounds: dict[str, float],
+) -> str:
+    payload = {
+        "schema": "layer-v2",
+        "layer_type": req.layer_type,
+        "timestamp": cache_timestamp,
+        "bounds": cache_bounds,
+    }
+    if req.scenario_id is not None:
+        payload["scenario_id"] = req.scenario_id
     if req.scenario is not None:
         payload["scenario"] = {
             "multiplier": req.scenario.multiplier,
@@ -287,6 +437,76 @@ def _get_cached_layer(cache_key: str, max_age_minutes: int):
         conn.close()
 
 
+def _get_cached_layer_by_signature(
+    layer_type: str,
+    effective_timestamp: str,
+    cache_bounds: dict[str, float],
+    max_age_minutes: int,
+):
+    conn = _get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT payload_json
+            FROM weather_layer_cache
+            WHERE layer_type = %s
+              AND effective_timestamp = %s
+              AND bounds_json = %s::jsonb
+              AND source = 'copernicus'
+              AND created_at >= NOW() - (%s * INTERVAL '1 minute')
+            ORDER BY created_at DESC
+            LIMIT 1;
+            """,
+            (
+                layer_type,
+                effective_timestamp,
+                json.dumps(cache_bounds),
+                max_age_minutes,
+            ),
+        )
+        row = cur.fetchone()
+        return row[0] if row else None
+    finally:
+        cur.close()
+        conn.close()
+
+
+def _decorate_cached_layer_payload(cached_payload, cache_key: str):
+    if isinstance(cached_payload, dict):
+        cached_payload["source"] = "db_cache"
+        cached_payload["cache_key"] = cache_key
+        # Arricchisci scenario con label se mancante
+        if isinstance(cached_payload.get("scenario"), dict):
+            sc = cached_payload["scenario"]
+            # Normalizza vecchi record che usavano la chiave italiana
+            if "scenario_nome" in sc:
+                label_val = sc.pop("scenario_nome")
+                if label_val is not None:
+                    sc["scenario_name"] = label_val
+            # Se manca scenario_name ma c'e scenario_id, recupera la label dal DB
+            if sc.get("scenario_name") is None and sc.get("scenario_id") is not None:
+                conn = _get_db_connection()
+                cur = conn.cursor()
+                try:
+                    cur.execute(
+                        "SELECT label FROM weather_scenarios WHERE id = %s",
+                        (sc["scenario_id"],),
+                    )
+                    sc_row = cur.fetchone()
+                    if sc_row and sc_row[0]:
+                        sc["scenario_name"] = sc_row[0]
+                finally:
+                    cur.close()
+                    conn.close()
+            # Rimuovi scenario_name se ancora null
+            if sc.get("scenario_name") is None:
+                sc.pop("scenario_name", None)
+            else:
+                sc["scenario_nome"] = sc["scenario_name"]
+    return cached_payload
+
+
 def _upsert_layer_cache(
     cache_key: str,
     req: LayerRequest,
@@ -294,7 +514,9 @@ def _upsert_layer_cache(
     effective_timestamp: str,
     payload: dict,
     source: str = "copernicus",
+    cache_bounds: dict[str, float] | None = None,
 ) -> None:
+    bounds_json = cache_bounds if cache_bounds is not None else _bounds_to_dict(req.bounds)
     conn = _get_db_connection()
     cur = conn.cursor()
     try:
@@ -328,7 +550,7 @@ def _upsert_layer_cache(
                 req.timestamp,
                 effective_timestamp,
                 dataset_id,
-                json.dumps(_bounds_to_dict(req.bounds)),
+                json.dumps(bounds_json),
                 json.dumps(payload),
                 source,
             ),
@@ -670,8 +892,6 @@ def subset_download(req: SubsetRequest):
 )
 def get_layer_data(req: LayerRequest):
     """Recupera dati correnti/onde da cache o Copernicus e restituisce items geolocalizzati."""
-    _ensure_login()
-
     # Risolvi scenario_id → scenario dal DB
     scenario_label = None
     if req.scenario_id is not None:
@@ -693,60 +913,73 @@ def get_layer_data(req: LayerRequest):
 
     has_scenario = req.scenario is not None
 
+    dataset_id, req_vars = _layer_dataset_config(req.layer_type)
+    target_time, cache_timestamp, cache_effective_timestamp = _layer_time_cache_values(
+        req.layer_type,
+        req.timestamp,
+    )
+    cache_bounds = _normalized_bounds_for_layer_cache(req.bounds)
     ttl_minutes = req.max_age_minutes if req.max_age_minutes is not None else _LAYER_CACHE_TTL_MIN
-    cache_key = _cache_key_for_layer(req)
+    cache_key = _cache_key_for_layer(req, cache_timestamp, cache_bounds)
+    # Some interactive clients send both use_cache=true/max_age_minutes and
+    # force_refresh=true. Treat max_age_minutes as the freshness contract for
+    # layer calls, so a fresh cache hit still avoids blocking on Copernicus.
+    should_bypass_cache = (
+        not req.use_cache
+        or (req.force_refresh and req.max_age_minutes is None)
+    )
 
-    if req.use_cache and not req.force_refresh:
+    def _cached_response():
+        if should_bypass_cache:
+            return None
+
         cached_payload = _get_cached_layer(cache_key, ttl_minutes)
         if cached_payload:
-            if isinstance(cached_payload, dict):
-                cached_payload["source"] = "db_cache"
-                cached_payload["cache_key"] = cache_key
-                # Arricchisci scenario con label se mancante
-                if isinstance(cached_payload.get("scenario"), dict):
-                    sc = cached_payload["scenario"]
-                    # Normalizza vecchi record che usavano la chiave italiana
-                    if "scenario_nome" in sc:
-                        label_val = sc.pop("scenario_nome")
-                        if label_val is not None:
-                            sc["scenario_name"] = label_val
-                    # Se manca scenario_name ma c'è scenario_id, recupera la label dal DB
-                    if sc.get("scenario_name") is None and sc.get("scenario_id") is not None:
-                        conn = _get_db_connection()
-                        cur = conn.cursor()
-                        try:
-                            cur.execute(
-                                "SELECT label FROM weather_scenarios WHERE id = %s",
-                                (sc["scenario_id"],),
-                            )
-                            sc_row = cur.fetchone()
-                            if sc_row and sc_row[0]:
-                                sc["scenario_name"] = sc_row[0]
-                        finally:
-                            cur.close()
-                            conn.close()
-                    # Rimuovi scenario_name se ancora null
-                    if sc.get("scenario_name") is None:
-                        sc.pop("scenario_name", None)
-                    else:
-                        sc["scenario_nome"] = sc["scenario_name"]
-            return cached_payload
+            return _decorate_cached_layer_payload(cached_payload, cache_key)
 
-    if req.layer_type == "currents":
-        dataset_id = "cmems_mod_med_phy-cur_anfc_4.2km_PT15M-i"
-        req_vars = ["uo", "vo"]
-    else:
-        dataset_id = "cmems_mod_med_wav_anfc_4.2km_PT1H-i"
-        req_vars = ["VMDR_WW", "VTM01_WW", "VHM0_WW"]
+        if not has_scenario:
+            cached_payload = _get_cached_layer_by_signature(
+                req.layer_type,
+                cache_effective_timestamp,
+                cache_bounds,
+                ttl_minutes,
+            )
+            if cached_payload:
+                if req.save_cache and isinstance(cached_payload, dict):
+                    _upsert_layer_cache(
+                        cache_key=cache_key,
+                        req=req,
+                        dataset_id=dataset_id,
+                        effective_timestamp=cached_payload.get("timestamp", cache_effective_timestamp),
+                        payload=cached_payload,
+                        source=cached_payload.get("source", "copernicus"),
+                        cache_bounds=cache_bounds,
+                    )
+                return _decorate_cached_layer_payload(cached_payload, cache_key)
+
+        return None
+
+    cached_response = _cached_response()
+    if cached_response:
+        return cached_response
+
+    fetch_lock = _get_layer_fetch_lock(cache_key)
+    fetch_lock.acquire()
 
     try:
+        cached_response = _cached_response()
+        if cached_response:
+            fetch_lock.release()
+            return cached_response
+
+        _ensure_login()
+
         ds = copernicusmarine.open_dataset(
             dataset_id=dataset_id,
             username=_USERNAME,
             password=_PASSWORD,
         )
 
-        target_time = pd.to_datetime(req.timestamp) if req.timestamp else datetime.now()
         try:
             ds_slice = ds.sel(time=target_time, method="nearest")
         except KeyError:
@@ -863,13 +1096,17 @@ def get_layer_data(req: LayerRequest):
                 effective_timestamp=payload["timestamp"],
                 payload=payload,
                 source=payload["source"],
+                cache_bounds=cache_bounds,
             )
 
         payload["cache_key"] = cache_key
+        fetch_lock.release()
         return payload
     except HTTPException:
+        fetch_lock.release()
         raise
     except Exception as exc:
+        fetch_lock.release()
         raise HTTPException(status_code=500, detail=f"Weather fetch failed: {exc}") from exc
 
 
