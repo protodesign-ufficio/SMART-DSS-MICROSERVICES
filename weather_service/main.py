@@ -3,6 +3,7 @@ import math
 import threading
 import json
 import hashlib
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -64,6 +65,11 @@ _LAYER_TIME_BUCKET_MINUTES = {
 _LAYER_PREWARM_ENABLED = os.getenv("WEATHER_LAYER_PREWARM_ENABLED", "true").lower() in {"1", "true", "yes", "on"}
 _LAYER_PREWARM_INTERVAL_SECONDS = int(os.getenv("WEATHER_LAYER_PREWARM_INTERVAL_SECONDS", "300"))
 _LAYER_PREWARM_TIMEZONE = os.getenv("WEATHER_LAYER_PREWARM_TIMEZONE", "Europe/Rome")
+_LAYER_PREWARM_OFFSETS_MINUTES = {
+    "currents": os.getenv("WEATHER_LAYER_PREWARM_CURRENTS_OFFSETS_MINUTES", "0,15,30"),
+    "waves": os.getenv("WEATHER_LAYER_PREWARM_WAVES_OFFSETS_MINUTES", "0,60"),
+}
+_LAYER_PREWARM_MAX_AGE_MINUTES = int(os.getenv("WEATHER_LAYER_PREWARM_MAX_AGE_MINUTES", "15"))
 _layer_prewarm_started = False
 _layer_prewarm_guard = threading.Lock()
 
@@ -329,46 +335,92 @@ def _layer_prewarm_timestamps(now: datetime | None = None) -> dict[str, list[str
             base = datetime.now(ZoneInfo(_LAYER_PREWARM_TIMEZONE)).replace(tzinfo=None)
         except Exception:
             base = datetime.now()
-    return {
-        "currents": [
-            base.isoformat(timespec="seconds"),
-            (base + timedelta(minutes=_LAYER_TIME_BUCKET_MINUTES["currents"])).isoformat(timespec="seconds"),
-        ],
-        "waves": [
-            base.isoformat(timespec="seconds"),
-            (base + timedelta(minutes=_LAYER_TIME_BUCKET_MINUTES["waves"])).isoformat(timespec="seconds"),
-        ],
-    }
+    timestamps: dict[str, list[str]] = {}
+    for layer_type, offsets_raw in _LAYER_PREWARM_OFFSETS_MINUTES.items():
+        offsets = _parse_int_offsets(offsets_raw)
+        layer_timestamps = [
+            (base + timedelta(minutes=offset)).isoformat(timespec="seconds")
+            for offset in offsets
+        ]
+        timestamps[layer_type] = list(dict.fromkeys(layer_timestamps))
+    return timestamps
+
+
+def _parse_int_offsets(value: str) -> list[int]:
+    offsets: list[int] = []
+    for part in value.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            offsets.append(int(part))
+        except ValueError:
+            print(f"[Weather prewarm] Ignoring invalid offset '{part}'", flush=True)
+    return offsets or [0]
+
+
+def _prewarm_layer_cache_job(layer_type: str, timestamp: str, bounds: Bounds) -> None:
+    t0 = time.perf_counter()
+    try:
+        payload = get_layer_data(
+            LayerRequest(
+                layer_type=layer_type,
+                bounds=bounds,
+                timestamp=timestamp,
+                use_cache=True,
+                save_cache=True,
+                force_refresh=False,
+                max_age_minutes=_LAYER_PREWARM_MAX_AGE_MINUTES,
+            )
+        )
+        elapsed_ms = int((time.perf_counter() - t0) * 1000)
+        source = payload.get("source") if isinstance(payload, dict) else "unknown"
+        effective_ts = payload.get("timestamp") if isinstance(payload, dict) else timestamp
+        print(
+            f"[Weather prewarm] {layer_type} requested={timestamp} "
+            f"effective={effective_ts} source={source} elapsed_ms={elapsed_ms}",
+            flush=True,
+        )
+    except Exception as exc:
+        print(f"[Weather prewarm] {layer_type} {timestamp} failed: {exc}", flush=True)
+
+
+def _prewarm_layer_cache_jobs_for_layer(layer_type: str, timestamps: list[str], bounds: Bounds) -> None:
+    for timestamp in timestamps:
+        _prewarm_layer_cache_job(layer_type, timestamp, bounds)
 
 
 def _prewarm_layer_cache_once() -> None:
     bounds = _default_layer_bounds_model()
+    threads: list[threading.Thread] = []
     for layer_type, timestamps in _layer_prewarm_timestamps().items():
-        for timestamp in timestamps:
-            try:
-                get_layer_data(
-                    LayerRequest(
-                        layer_type=layer_type,
-                        bounds=bounds,
-                        timestamp=timestamp,
-                        use_cache=True,
-                        save_cache=True,
-                        force_refresh=False,
-                    )
-                )
-            except Exception as exc:
-                print(f"[Weather prewarm] {layer_type} {timestamp} failed: {exc}")
+        thread = threading.Thread(
+            target=_prewarm_layer_cache_jobs_for_layer,
+            args=(layer_type, timestamps, bounds),
+            name=f"weather-prewarm-{layer_type}",
+            daemon=True,
+        )
+        thread.start()
+        threads.append(thread)
+
+    for thread in threads:
+        thread.join()
 
 
 def _layer_prewarm_loop() -> None:
+    print("[Weather prewarm] loop started", flush=True)
     while True:
-        _prewarm_layer_cache_once()
+        try:
+            _prewarm_layer_cache_once()
+        except Exception as exc:
+            print(f"[Weather prewarm] loop failed: {exc}", flush=True)
         threading.Event().wait(_LAYER_PREWARM_INTERVAL_SECONDS)
 
 
 def _start_layer_prewarm_thread() -> None:
     global _layer_prewarm_started
     if not _LAYER_PREWARM_ENABLED:
+        print("[Weather prewarm] disabled", flush=True)
         return
     with _layer_prewarm_guard:
         if _layer_prewarm_started:
@@ -376,6 +428,7 @@ def _start_layer_prewarm_thread() -> None:
         thread = threading.Thread(target=_layer_prewarm_loop, name="weather-layer-prewarm", daemon=True)
         thread.start()
         _layer_prewarm_started = True
+        print("[Weather prewarm] thread started", flush=True)
 
 
 def _cache_key_for_layer(

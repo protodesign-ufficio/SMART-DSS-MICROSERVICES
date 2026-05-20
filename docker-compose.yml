@@ -83,6 +83,12 @@ services:
       WEATHER_DATA_DIR: "/app/copernicus-data"
       WEATHER_DB_CONN: "dbname=weather_db user=postgres password=admin host=host.docker.internal"
       WEATHER_LAYER_CACHE_TTL_MIN: "120"
+      WEATHER_LAYER_PREWARM_ENABLED: "true"
+      WEATHER_LAYER_PREWARM_INTERVAL_SECONDS: "180"
+      WEATHER_LAYER_PREWARM_TIMEZONE: "Europe/Rome"
+      WEATHER_LAYER_PREWARM_MAX_AGE_MINUTES: "15"
+      WEATHER_LAYER_PREWARM_CURRENTS_OFFSETS_MINUTES: "0,15,30"
+      WEATHER_LAYER_PREWARM_WAVES_OFFSETS_MINUTES: "0,60"
     volumes:
       - ./copernicus-data:/app/copernicus-data
     extra_hosts:

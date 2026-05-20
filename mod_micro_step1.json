@@ -1,6 +1,6 @@
 {
   "params": {
-    "Intercept": 238.61895011589445,
+    "Intercept": 38.61895011589445,
     "C(weekend)[T.True]": 32.95063047469113,
     "C(stagione)[T.estate]": 6.5358966778410865,
     "C(stagione)[T.inverno]": -7.9066585015926,
