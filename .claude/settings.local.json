@@ -31,7 +31,23 @@
       "PowerShell(docker exec aisconsumer-bridge-deltaeta-1 grep -rl \"analytics_update\" /app 2>&1)",
       "PowerShell(docker exec aisconsumer-bridge-arrivo-1 grep -rl \"analytics_update\" /app 2>&1)",
       "PowerShell(docker exec aisconsumer-decoder-ais-faststream-docs-1 grep -rl \"analytics_update\" /app 2>&1)",
-      "PowerShell(docker exec smart-dss-microservices-telemetry-1 grep -rl \"analytics_update\\\\|socketio\\\\|socket.io\" /app 2>&1)"
+      "PowerShell(docker exec smart-dss-microservices-telemetry-1 grep -rl \"analytics_update\\\\|socketio\\\\|socket.io\" /app 2>&1)",
+      "PowerShell(docker exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic analytics_ais.raw --max-messages 20 --timeout-ms 5000 2>&1)",
+      "PowerShell(docker exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server 87.26.178.190:29092 --topic analytics_ais.raw --max-messages 10 --timeout-ms 6000 2>&1)",
+      "PowerShell(docker restart aisconsumer-bridge-components-1 2>&1)",
+      "PowerShell(docker exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server 87.26.178.190:29092 --topic analytics_ais.raw --max-messages 80 --timeout-ms 12000 2>&1)",
+      "PowerShell(Invoke-RestMethod -Uri \"http://87.26.178.190:25080/componente/by_mmsi/247443400\" -Method GET 2>&1)",
+      "PowerShell(docker cp \"C:\\\\Users\\\\Protodesign\\\\Desktop\\\\SMART-DSS-MICROSERVICES\\\\anagrafica_service\\\\sql\\\\seed_sirius_rbd.sql\" smart-dss-microservices-anagrafica-1:/tmp/seed_sirius_rbd.sql 2>&1)",
+      "PowerShell(docker exec smart-dss-microservices-anagrafica-1 which psql 2>&1)",
+      "PowerShell(docker cp \"C:\\\\Users\\\\Protodesign\\\\Desktop\\\\SMART-DSS-MICROSERVICES\\\\anagrafica_service\\\\sql\\\\run_seed.py\" smart-dss-microservices-anagrafica-1:/tmp/run_seed.py 2>&1)",
+      "PowerShell(docker exec smart-dss-microservices-anagrafica-1 python3 /tmp/run_seed.py 2>&1)",
+      "PowerShell(Invoke-RestMethod -Uri \"http://87.26.178.190:25080/componente/by_mmsi/247443400\" -Method GET)",
+      "PowerShell(docker exec aisconsumer-bridge-components-1 cat /app/config_loader.py 2>&1)",
+      "Bash(Start-Sleep -Seconds 40)",
+      "PowerShell(docker exec aisconsumer-bridge-components-1 python3 -c \"import os; print\\(os.listdir\\('/app'\\)\\)\" 2>&1)",
+      "PowerShell(docker exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic analytics_ais.raw --max-messages 100 --timeout-ms 45000 2>&1 | Where-Object { $_ -match \"247443400\" } | ConvertFrom-Json | Select-Object component | Group-Object component | Select-Object Name, Count)",
+      "PowerShell(docker cp C:\\\\AisConsumer\\\\bridge_components.py aisconsumer-bridge-components-1:/app/bridge_components.py 2>&1)",
+      "PowerShell(docker exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic ais_simulation.raw --max-messages 3 --timeout-ms 10000 2>&1)"
     ]
   }
 }
