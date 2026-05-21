@@ -1,14 +1,14 @@
 {
   "params": {
-    "Intercept": 38.61895011589445,
-    "C(weekend)[T.True]": 32.95063047469113,
+    "Intercept": 49.61895011589445,
+    "C(weekend)[T.True]": 3.95063047469113,
     "C(stagione)[T.estate]": 6.5358966778410865,
     "C(stagione)[T.inverno]": -7.9066585015926,
     "C(stagione)[T.primavera]": -1.7031181972423508,
-    "C(festivo)[T.si]": 28.979010094200035,
-    "C(meteo_previsto_al_sample)[T.brutto tempo]": -18.443405513050465,
-    "C(meteo_previsto_al_sample)[T.tempesta]": -53.44179026844516,
-    "peso_corsa_delta": 53.08490086426
+    "C(festivo)[T.si]": 6.979010094200035,
+    "C(meteo_previsto_al_sample)[T.brutto tempo]": -9.443405513050465,
+    "C(meteo_previsto_al_sample)[T.tempesta]": -20.44179026844516,
+    "peso_corsa_delta": 1.38490086426
   },
   "cov": [
     [
