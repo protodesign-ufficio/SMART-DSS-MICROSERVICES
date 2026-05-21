@@ -407,6 +407,26 @@ def get_percorsi_compatibili(corsa_id: str, percorsi_id: list):
             "orario_arrivo_calcolato": orario_arrivo.isoformat() if orario_arrivo else None,
         }
 
+    vessel_capacity_cache: dict = {}
+
+    def _get_vessel_capacity(vascello_id: str | None) -> int | None:
+        if not vascello_id:
+            return None
+        if vascello_id in vessel_capacity_cache:
+            return vessel_capacity_cache[vascello_id]
+        cap = None
+        try:
+            url = f"{ANAGRAFICA_SERVICE_URL.rstrip('/')}/internal/vascello/{vascello_id}"
+            resp = requests.get(url, timeout=5.0)
+            if resp.status_code == 200:
+                data = resp.json()
+                if isinstance(data, dict) and data.get("capacita_passeggeri") is not None:
+                    cap = int(data["capacita_passeggeri"])
+        except Exception:
+            pass
+        vessel_capacity_cache[vascello_id] = cap
+        return cap
+
     percorsi_id_set = {str(pid) for pid in (percorsi_id or [])}
 
     percorsi_target_resp = _get_json(
@@ -419,10 +439,61 @@ def get_percorsi_compatibili(corsa_id: str, percorsi_id: list):
     if not isinstance(percorsi_corsa, list) or not percorsi_corsa:
         raise HTTPException(status_code=404, detail=f"Nessun percorso trovato per la corsa {corsa_id}")
 
+    # Recupera confidenza_min e confidenza_max dalla previsione domanda per questa corsa.
+    # Se il servizio non è raggiungibile o la previsione non esiste, il filtro viene saltato.
+    confidenza_min: float | None = None
+    confidenza_max: float | None = None
+    try:
+        forecast_url = f"{FORECAST_SERVICE_URL.rstrip('/')}/internal/previsione/corsa/{corsa_id}/calcola"
+        forecast_resp = requests.post(
+            forecast_url,
+            json={"biglietti_venduti_al_sample": 10, "festivo": False},
+            timeout=30.0,
+        )
+        if forecast_resp.status_code == 200:
+            forecast_data = forecast_resp.json()
+            dettagli = forecast_data.get("dettagli") or {}
+            ci = dettagli.get("micro_finale_ci_95")
+            if isinstance(ci, list) and len(ci) >= 2:
+                confidenza_min = float(ci[0])
+                confidenza_max = float(ci[1])
+    except Exception:
+        pass
+
+    def _calc_rischio(cap: int | None) -> float | None:
+        """r(x) = 0 se x>U ; (U-x)/(U-L) se L<=x<=U ; 1 se x<L"""
+        if cap is None or confidenza_min is None or confidenza_max is None:
+            return None
+        x, L, U = float(cap), confidenza_min, confidenza_max
+        if U <= L:
+            return 0.0 if x >= U else 1.0
+        if x > U:
+            return 0.0
+        if x < L:
+            return 1.0
+        return (U - x) / (U - L)
+
+    def _is_capacity_sufficient(vascello_id: str | None) -> tuple[bool, int | None]:
+        """Restituisce (sufficiente, capacita). Se dati mancanti permette il percorso."""
+        cap = _get_vessel_capacity(vascello_id)
+        if confidenza_min is None or cap is None:
+            return True, cap
+        return confidenza_min <= cap, cap
+
     if not percorsi_id_set:
+        result_list = []
+        for pc in percorsi_corsa:
+            pc_vascello_id = str(pc.get("vascello_id")) if pc.get("vascello_id") else None
+            sufficiente, cap = _is_capacity_sufficient(pc_vascello_id)
+            if not sufficiente:
+                continue
+            item = _build_percorso_response(pc)
+            item["capacita_passeggeri"] = cap
+            item["rischio_operativo"] = _calc_rischio(cap)
+            result_list.append(item)
         return {
             "corsa_id": corsa_id,
-            "percorsi_compatibili": [_build_percorso_response(pc) for pc in percorsi_corsa],
+            "percorsi_compatibili": result_list,
         }
 
     percorsi_assegnati_list = []
@@ -495,7 +566,13 @@ def get_percorsi_compatibili(corsa_id: str, percorsi_id: list):
                 break
 
         if compatibile_con_tutti:
-            percorsi_compatibili.append(_build_percorso_response(pc))
+            sufficiente, cap = _is_capacity_sufficient(pc_vascello_id)
+            if not sufficiente:
+                continue
+            item = _build_percorso_response(pc)
+            item["capacita_passeggeri"] = cap
+            item["rischio_operativo"] = _calc_rischio(cap)
+            percorsi_compatibili.append(item)
 
     return {
         "corsa_id": corsa_id,

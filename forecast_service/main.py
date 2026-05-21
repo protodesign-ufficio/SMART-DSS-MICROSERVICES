@@ -82,9 +82,17 @@ def calcola_previsione(
 
         giorno_target = orario_ts.date().strftime("%Y-%m-%d")
         orario_str = orario_ts.strftime("%H%M")
+        corsa_label = " ".join(
+            value for value in [
+                corsa_data.get("nome"),
+                corsa_data.get("tratta_nome"),
+            ]
+            if value
+        )
 
         payload = {
             "giorno_target": giorno_target,
+            "corsa": corsa_label or None,
             "orario": orario_str,
             "biglietti_venduti_al_sample": req.get("biglietti_venduti_al_sample"),
             "festivo": req.get("festivo"),

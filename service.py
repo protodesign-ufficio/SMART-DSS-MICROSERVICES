@@ -11,6 +11,7 @@
 
 import json
 import numpy as np
+import re
 from datetime import datetime, date
 from fastapi import FastAPI
 from pydantic import BaseModel
@@ -181,14 +182,22 @@ def is_festivo(dt: date, festivo_from_user: bool | None) -> bool:
 # CARICAMENTO MODELLI (params + cov + sigma)
 #####################################
 def load_model(fname: str):
-    m = json.load(open(fname))
-    return m["params"], np.array(m["cov"]), m["sigma"]
+    with open(fname, encoding="utf-8") as f:
+        m = json.load(f)
+    return m["params"], np.array(m["cov"]), m["sigma"], m
 
 
 try:
-    params_tot, cov_tot, sigma_tot = load_model("mod_macro.json")
-    params_m1,  cov_m1,  sigma_m1  = load_model("mod_micro_step1.json")
-    params_m2,  cov_m2,  sigma_m2  = load_model("mod_micro_step2.json")
+    params_tot, cov_tot, sigma_tot, model_tot = load_model("mod_macro.json")
+    params_m1,  cov_m1,  sigma_m1,  model_m1  = load_model("mod_micro_step1.json")
+    params_m2,  cov_m2,  sigma_m2,  model_m2  = load_model("mod_micro_step2.json")
+
+    CORSA_WEIGHT_MODEL = (
+        model_m1.get("corsa_weight_model")
+        or model_m2.get("corsa_weight_model")
+        or model_tot.get("corsa_weight_model")
+        or {}
+    )
 
     config = json.load(open("config_modelli.json"))
     REF_DATE = datetime.strptime(config["ref_date"], "%Y-%m-%d").date()
@@ -198,6 +207,7 @@ except Exception as e:
     REF_DATE = datetime.now().date()
     params_tot = params_m1 = params_m2 = {}
     cov_tot = cov_m1 = cov_m2 = np.eye(1)
+    CORSA_WEIGHT_MODEL = {}
 
 
 #####################################
@@ -242,6 +252,60 @@ def predict_with_ci(params: dict, cov: np.ndarray, x_vec: np.ndarray):
 
 def compute_biglietti_medi(sample: float, gap: int) -> float:
     return sample / max(1, 21 - gap)
+
+
+def _normalizza_codice(value: str | None) -> str:
+    return re.sub(r"[^A-Za-z0-9]", "", value or "").upper()
+
+
+def _normalizza_orario(value: str | None) -> str | None:
+    digits = re.sub(r"[^0-9]", "", value or "")
+    return digits[:4] if len(digits) >= 4 else None
+
+
+def _normalizza_corsa(value: str | None) -> str:
+    norm = _normalizza_codice(value)
+    aliases = CORSA_WEIGHT_MODEL.get("port_code_aliases", {})
+    for name_norm, code in sorted(aliases.items(), key=lambda item: len(item[0]), reverse=True):
+        norm = norm.replace(name_norm, code)
+    return norm
+
+
+def resolve_corsa_weight(corsa: str | None, orario: str | None) -> tuple[float, str, str | None]:
+    """
+    Resolve a historical demand weight for a ride.
+    Priority: exact route+time, route, departure time, default.
+    """
+    model = CORSA_WEIGHT_MODEL or {}
+    default_weight = float(model.get("default_weight", 1.0))
+    route_weights = model.get("route_weights", {})
+    ride_weights = model.get("ride_weights", {})
+    time_weights = model.get("time_weights", {})
+
+    time_key = _normalizza_orario(orario)
+    ride_norm = _normalizza_corsa(corsa)
+
+    if ride_norm:
+        if len(ride_norm) > 4 and ride_norm[-4:].isdigit():
+            candidate = f"{ride_norm[:-4]}-{ride_norm[-4:]}"
+            if candidate in ride_weights:
+                return float(ride_weights[candidate]["weight"]), "ride", candidate
+
+        if time_key:
+            for route_key in sorted(route_weights.keys(), key=len, reverse=True):
+                if route_key in ride_norm:
+                    candidate = f"{route_key}-{time_key}"
+                    if candidate in ride_weights:
+                        return float(ride_weights[candidate]["weight"]), "ride", candidate
+
+        for route_key in sorted(route_weights.keys(), key=len, reverse=True):
+            if route_key in ride_norm:
+                return float(route_weights[route_key]["weight"]), "route", route_key
+
+    if time_key and time_key in time_weights:
+        return float(time_weights[time_key]["weight"]), "time", time_key
+
+    return default_weight, "default", None
 
 
 #####################################
@@ -358,6 +422,9 @@ def predict(inp: CorsaInput):
         giorni_alla_partenza_auto
     )
 
+    peso_corsa, peso_corsa_source, peso_corsa_key = resolve_corsa_weight(inp.corsa, inp.orario)
+    peso_corsa_delta = peso_corsa - 1.0
+
     ##################################
     # LOOP SU SCENARI METEO
     ##################################
@@ -377,7 +444,10 @@ def predict(inp: CorsaInput):
     for idx_m, meteo_auto in enumerate(meteos_to_test):
 
         # ----- MICRO BASE MODEL -----
-        feat_m1 = {"Intercept": 1}
+        feat_m1 = {
+            "Intercept": 1,
+            "peso_corsa_delta": peso_corsa_delta,
+        }
 
         if weekend:
             feat_m1["C(weekend)[T.True]"] = 1
@@ -459,6 +529,9 @@ def predict(inp: CorsaInput):
         "festivo_auto": festivo,
         "giorni_alla_partenza_auto": int(giorni_alla_partenza_auto),
         "meteo_auto": meteo_out,
+        "peso_corsa": round(peso_corsa, 4),
+        "peso_corsa_source": peso_corsa_source,
+        "peso_corsa_key": peso_corsa_key,
 
         "totali_previsti": int(round(tot_final)),
         "totali_ci_95": [int(round(tot_lo)), int(round(tot_hi))],

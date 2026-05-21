@@ -212,7 +212,8 @@ def compute_assignments_endpoint(payload: AssignmentRequest):
     response_model=PercorsiCompatibiliResponse,
     summary="Percorsi compatibili per una corsa",
     description="""
-Restituisce i percorsi di una corsa che sono compatibili con i percorsi già assegnati dall'utente.
+Restituisce i percorsi di una corsa che sono compatibili con i percorsi già assegnati dall'utente,
+applicando filtri di compatibilità temporale, capacità e calcolo del rischio operativo.
 
 ### Caso d'uso
 
@@ -222,9 +223,41 @@ possono essere assegnati senza conflitti con le assegnazioni esistenti.
 
 ### Logica di Compatibilità
 
-Un percorso della corsa è **compatibile** se:
+Un percorso della corsa è **compatibile** se soddisfa **tutti** i seguenti criteri:
+
+#### 1. Compatibilità temporale
 - Il suo vascello è **diverso** da tutti i vascelli dei percorsi già assegnati, OPPURE
-- Se usa lo **stesso vascello**, non c'è sovrapposizione temporale (il percorso già assegnato termina prima che questo inizi, o viceversa)
+- Se usa lo **stesso vascello**, non c'è sovrapposizione temporale (il percorso già assegnato
+  termina prima che questo inizi, o viceversa)
+
+#### 2. Compatibilità capacità passeggeri
+- La capacità del vascello (recuperata dall'anagrafica) deve essere **≥ confidenza_min**
+  della previsione domanda per quella corsa
+- `confidenza_min` = lower bound del 95% CI della previsione ML passeggeri
+- Percorsi il cui vascello non può ospitare nemmeno il numero minimo atteso di passeggeri
+  vengono **esclusi automaticamente**
+- Se la previsione non è disponibile o il servizio ML è irraggiungibile, il filtro capacità
+  viene saltato e tutti i percorsi sono inclusi
+
+### Rischio Operativo
+
+Per ogni percorso compatibile viene calcolato un indice di rischio operativo `rischio_operativo ∈ [0, 1]`:
+
+```
+r(x) = 0             se x > U          (capacità abbondante, nessun rischio)
+r(x) = (U - x)/(U - L)  se L ≤ x ≤ U  (rischio parziale proporzionale)
+r(x) = 1             se x < L          (sovraccarico quasi certo — non restituito*)
+```
+
+dove:
+- `x` = capacità passeggeri del vascello
+- `L` = lower bound 95% CI previsione (confidenza_min)
+- `U` = upper bound 95% CI previsione (confidenza_max)
+
+> *I percorsi con `x < L` (rischio = 1, cioè `confidenza_min > capacità`) vengono filtrati
+> e **non** compaiono nella risposta.
+
+`rischio_operativo` è `null` se la previsione non è disponibile.
 
 ### Input
 ```json
@@ -239,18 +272,30 @@ Un percorso della corsa è **compatibile** se:
 {
   "corsa_id": "uuid-corsa",
   "percorsi_compatibili": [
-    {"percorso_id": "uuid", "vascello_id": "uuid", "vascello_nome": "Nave1"}
+    {
+      "percorso_id": "uuid",
+      "vascello_id": "uuid",
+      "vascello_nome": "Nave1",
+      "capacita_passeggeri": 120,
+      "rischio_operativo": 0.35,
+      "tempo_percorrenza_min": 45.0,
+      "consumo": 180.5,
+      "comfort": 87.2,
+      "orario_partenza_schedulato": "2026-02-05T08:00:00"
+    }
   ]
 }
 ```
 
 ### Note
-- Se `percorsi_id` è vuoto, restituisce tutti i percorsi della corsa
+- Se `percorsi_id` è vuoto, applica solo il filtro capacità (nessun controllo sovrapposizione)
 - Filtra solo i percorsi compatibili con **tutti** i percorsi già assegnati
+- La previsione passeggeri viene ricalcolata (con cache) al momento della chiamata
     """,
     responses={
-        200: {"description": "Lista percorsi compatibili"},
-        404: {"description": "Corsa non trovata o senza percorsi"}
+        200: {"description": "Lista percorsi compatibili con rischio operativo"},
+        404: {"description": "Corsa non trovata o senza percorsi"},
+        503: {"description": "Percorsi service non raggiungibile"}
     }
 )
 def get_percorsi_compatibili_endpoint(payload: PercorsiCompatibiliInput):

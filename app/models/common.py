@@ -521,17 +521,30 @@ class PercorsoCompatibile(BaseModel):
     # Campi vascello
     vascello_id: Optional[str] = Field(None, description="UUID del vascello")
     vascello_nome: Optional[str] = Field(None, description="Nome del vascello")
+    capacita_passeggeri: Optional[int] = Field(None, description="Capacità passeggeri del vascello")
+    rischio_operativo: Optional[float] = Field(None, description="Rischio operativo [0,1]: 0=nessun rischio, 1=sovraccarico certo")
     # Campi corsa
     orario_partenza_schedulato: Optional[str] = Field(None, description="Orario partenza schedulato")
     orario_arrivo_max: Optional[str] = Field(None, description="Orario arrivo massimo")
 
 
 class PercorsiCompatibiliResponse(BaseModel):
-    """Risposta con i percorsi della corsa compatibili con quelli già assegnati."""
+    """Risposta con i percorsi della corsa compatibili con quelli già assegnati.
+
+    Ogni percorso ha superato i controlli di:
+    - compatibilità temporale (nessuna sovrapposizione sullo stesso vascello)
+    - compatibilità capacità (capacita_passeggeri >= confidenza_min previsione ML)
+
+    Il campo rischio_operativo indica la probabilità di sovraccarico in base al 95% CI della previsione.
+    """
     corsa_id: str = Field(..., description="UUID della corsa di riferimento")
     percorsi_compatibili: List[PercorsoCompatibile] = Field(
         ...,
-        description="Lista percorsi della corsa compatibili con tutti i percorsi già assegnati"
+        description=(
+            "Percorsi compatibili per la corsa: filtrati per sovrapposizione temporale "
+            "e capacità vascello rispetto alla previsione domanda. "
+            "Ordinati per data di creazione discendente (più recenti prima)."
+        )
     )
 
 

@@ -133,5 +133,2517 @@
       88196.2727943112
     ]
   ],
-  "sigma": 25459168.166122932
+  "sigma": 25459168.166122932,
+  "corsa_weight_model": {
+    "source_file": "c:\\Users\\Protodesign\\Desktop\\riepilogo_biglietti_meteo_maggio.xlsx",
+    "source_sheet": "Dati arricchiti",
+    "period": {
+      "start": "2026-05-01",
+      "end": "2026-05-14",
+      "days": 14
+    },
+    "records": 1967,
+    "overall_biglietti": 104418,
+    "overall_mean_biglietti_per_corsa": 53.084901,
+    "default_weight": 1.0,
+    "feature_name": "peso_corsa_delta",
+    "feature_definition": "peso_corsa - 1.0",
+    "weight_formula": "mean_biglietti / overall_mean_biglietti_per_corsa",
+    "ride_weight_formula": "route-time mean shrunk toward route mean with k=3",
+    "priority": [
+      "ride_weights",
+      "route_weights",
+      "time_weights",
+      "default_weight"
+    ],
+    "port_codes": {
+      "SAC": "Salerno Concordia",
+      "VSM": "Vietri sul Mare",
+      "CET": "Cetara",
+      "MAI": "Maiori",
+      "MIN": "Minori",
+      "AMA": "Amalfi",
+      "POS": "Positano"
+    },
+    "port_code_aliases": {
+      "SALERNOCONCORDIA": "SAC",
+      "VIETRISULMARE": "VSM",
+      "CETARA": "CET",
+      "MAIORI": "MAI",
+      "MINORI": "MIN",
+      "AMALFI": "AMA",
+      "POSITANO": "POS",
+      "SAL": "SAC",
+      "SALERN": "SAC",
+      "SALERNOCONC": "SAC",
+      "VIE": "VSM",
+      "VIETRI": "VSM"
+    },
+    "route_weights": {
+      "POSAMA": {
+        "weight": 4.621752,
+        "mean_biglietti": 245.345,
+        "total_biglietti": 20609,
+        "n": 84
+      },
+      "AMASAC": {
+        "weight": 3.157269,
+        "mean_biglietti": 167.603,
+        "total_biglietti": 20280,
+        "n": 121
+      },
+      "SACAMA": {
+        "weight": 2.162887,
+        "mean_biglietti": 114.817,
+        "total_biglietti": 13778,
+        "n": 120
+      },
+      "SACPOS": {
+        "weight": 1.808424,
+        "mean_biglietti": 96.0,
+        "total_biglietti": 9216,
+        "n": 96
+      },
+      "AMAPOS": {
+        "weight": 1.799501,
+        "mean_biglietti": 95.526,
+        "total_biglietti": 9075,
+        "n": 95
+      },
+      "AMAMAI": {
+        "weight": 1.531974,
+        "mean_biglietti": 81.325,
+        "total_biglietti": 6262,
+        "n": 77
+      },
+      "POSSAC": {
+        "weight": 1.291634,
+        "mean_biglietti": 68.566,
+        "total_biglietti": 5691,
+        "n": 83
+      },
+      "MAIAMA": {
+        "weight": 0.704225,
+        "mean_biglietti": 37.384,
+        "total_biglietti": 3215,
+        "n": 86
+      },
+      "AMAMIN": {
+        "weight": 0.659892,
+        "mean_biglietti": 35.03,
+        "total_biglietti": 2312,
+        "n": 66
+      },
+      "MINAMA": {
+        "weight": 0.605686,
+        "mean_biglietti": 32.153,
+        "total_biglietti": 2315,
+        "n": 72
+      },
+      "SACMAI": {
+        "weight": 0.462332,
+        "mean_biglietti": 24.543,
+        "total_biglietti": 1718,
+        "n": 70
+      },
+      "VSMAMA": {
+        "weight": 0.384156,
+        "mean_biglietti": 20.393,
+        "total_biglietti": 1142,
+        "n": 56
+      },
+      "AMAVSM": {
+        "weight": 0.367799,
+        "mean_biglietti": 19.525,
+        "total_biglietti": 1191,
+        "n": 61
+      },
+      "MAISAC": {
+        "weight": 0.337488,
+        "mean_biglietti": 17.915,
+        "total_biglietti": 1272,
+        "n": 71
+      },
+      "SACVSM": {
+        "weight": 0.300908,
+        "mean_biglietti": 15.974,
+        "total_biglietti": 607,
+        "n": 38
+      },
+      "MINSAC": {
+        "weight": 0.250778,
+        "mean_biglietti": 13.312,
+        "total_biglietti": 852,
+        "n": 64
+      },
+      "SACMIN": {
+        "weight": 0.221421,
+        "mean_biglietti": 11.754,
+        "total_biglietti": 717,
+        "n": 61
+      },
+      "VSMSAC": {
+        "weight": 0.175937,
+        "mean_biglietti": 9.34,
+        "total_biglietti": 495,
+        "n": 53
+      },
+      "MAIMIN": {
+        "weight": 0.159074,
+        "mean_biglietti": 8.444,
+        "total_biglietti": 228,
+        "n": 27
+      },
+      "MINVSM": {
+        "weight": 0.154127,
+        "mean_biglietti": 8.182,
+        "total_biglietti": 270,
+        "n": 33
+      },
+      "CETSAC": {
+        "weight": 0.152072,
+        "mean_biglietti": 8.073,
+        "total_biglietti": 444,
+        "n": 55
+      },
+      "MINMAI": {
+        "weight": 0.147026,
+        "mean_biglietti": 7.805,
+        "total_biglietti": 320,
+        "n": 41
+      },
+      "CETAMA": {
+        "weight": 0.130415,
+        "mean_biglietti": 6.923,
+        "total_biglietti": 360,
+        "n": 52
+      },
+      "CETVSM": {
+        "weight": 0.125216,
+        "mean_biglietti": 6.647,
+        "total_biglietti": 226,
+        "n": 34
+      },
+      "AMACET": {
+        "weight": 0.12419,
+        "mean_biglietti": 6.593,
+        "total_biglietti": 356,
+        "n": 54
+      },
+      "SACCET": {
+        "weight": 0.124015,
+        "mean_biglietti": 6.583,
+        "total_biglietti": 316,
+        "n": 48
+      },
+      "MINCET": {
+        "weight": 0.116794,
+        "mean_biglietti": 6.2,
+        "total_biglietti": 155,
+        "n": 25
+      },
+      "VSMCET": {
+        "weight": 0.107752,
+        "mean_biglietti": 5.72,
+        "total_biglietti": 143,
+        "n": 25
+      },
+      "VSMMAI": {
+        "weight": 0.104756,
+        "mean_biglietti": 5.561,
+        "total_biglietti": 228,
+        "n": 41
+      },
+      "VSMMIN": {
+        "weight": 0.085095,
+        "mean_biglietti": 4.517,
+        "total_biglietti": 131,
+        "n": 29
+      },
+      "MAIVSM": {
+        "weight": 0.082886,
+        "mean_biglietti": 4.4,
+        "total_biglietti": 154,
+        "n": 35
+      },
+      "CETMAI": {
+        "weight": 0.072936,
+        "mean_biglietti": 3.872,
+        "total_biglietti": 151,
+        "n": 39
+      },
+      "MAICET": {
+        "weight": 0.068287,
+        "mean_biglietti": 3.625,
+        "total_biglietti": 145,
+        "n": 40
+      },
+      "CETMIN": {
+        "weight": 0.055257,
+        "mean_biglietti": 2.933,
+        "total_biglietti": 44,
+        "n": 15
+      }
+    },
+    "time_weights": {
+      "1745": {
+        "weight": 10.400321,
+        "mean_biglietti": 552.1,
+        "total_biglietti": 5521,
+        "n": 10
+      },
+      "1615": {
+        "weight": 8.421923,
+        "mean_biglietti": 447.077,
+        "total_biglietti": 5812,
+        "n": 13
+      },
+      "0940": {
+        "weight": 5.645045,
+        "mean_biglietti": 299.667,
+        "total_biglietti": 5394,
+        "n": 18
+      },
+      "1330": {
+        "weight": 5.141763,
+        "mean_biglietti": 272.95,
+        "total_biglietti": 5459,
+        "n": 20
+      },
+      "1830": {
+        "weight": 4.075233,
+        "mean_biglietti": 216.333,
+        "total_biglietti": 5192,
+        "n": 24
+      },
+      "0840": {
+        "weight": 3.523515,
+        "mean_biglietti": 187.045,
+        "total_biglietti": 4115,
+        "n": 22
+      },
+      "2200": {
+        "weight": 3.390795,
+        "mean_biglietti": 180.0,
+        "total_biglietti": 180,
+        "n": 1
+      },
+      "2100": {
+        "weight": 3.070553,
+        "mean_biglietti": 163.0,
+        "total_biglietti": 163,
+        "n": 1
+      },
+      "1530": {
+        "weight": 3.033287,
+        "mean_biglietti": 161.022,
+        "total_biglietti": 7407,
+        "n": 46
+      },
+      "1040": {
+        "weight": 2.869332,
+        "mean_biglietti": 152.318,
+        "total_biglietti": 3351,
+        "n": 22
+      },
+      "1400": {
+        "weight": 2.529396,
+        "mean_biglietti": 134.273,
+        "total_biglietti": 1477,
+        "n": 11
+      },
+      "1130": {
+        "weight": 2.401509,
+        "mean_biglietti": 127.484,
+        "total_biglietti": 3952,
+        "n": 31
+      },
+      "1410": {
+        "weight": 2.329602,
+        "mean_biglietti": 123.667,
+        "total_biglietti": 3710,
+        "n": 30
+      },
+      "1700": {
+        "weight": 2.266809,
+        "mean_biglietti": 120.333,
+        "total_biglietti": 5054,
+        "n": 42
+      },
+      "1110": {
+        "weight": 2.089278,
+        "mean_biglietti": 110.909,
+        "total_biglietti": 2440,
+        "n": 22
+      },
+      "1910": {
+        "weight": 1.985256,
+        "mean_biglietti": 105.387,
+        "total_biglietti": 6534,
+        "n": 62
+      },
+      "1140": {
+        "weight": 1.838728,
+        "mean_biglietti": 97.609,
+        "total_biglietti": 2245,
+        "n": 23
+      },
+      "2300": {
+        "weight": 1.751911,
+        "mean_biglietti": 93.0,
+        "total_biglietti": 93,
+        "n": 1
+      },
+      "1230": {
+        "weight": 1.709098,
+        "mean_biglietti": 90.727,
+        "total_biglietti": 998,
+        "n": 11
+      },
+      "1035": {
+        "weight": 1.370446,
+        "mean_biglietti": 72.75,
+        "total_biglietti": 873,
+        "n": 12
+      },
+      "1245": {
+        "weight": 1.32241,
+        "mean_biglietti": 70.2,
+        "total_biglietti": 702,
+        "n": 10
+      },
+      "1030": {
+        "weight": 1.207328,
+        "mean_biglietti": 64.091,
+        "total_biglietti": 1410,
+        "n": 22
+      },
+      "0945": {
+        "weight": 1.171906,
+        "mean_biglietti": 62.211,
+        "total_biglietti": 1182,
+        "n": 19
+      },
+      "1210": {
+        "weight": 1.085739,
+        "mean_biglietti": 57.636,
+        "total_biglietti": 634,
+        "n": 11
+      },
+      "1200": {
+        "weight": 1.076606,
+        "mean_biglietti": 57.152,
+        "total_biglietti": 1886,
+        "n": 33
+      },
+      "1415": {
+        "weight": 1.024052,
+        "mean_biglietti": 54.362,
+        "total_biglietti": 2555,
+        "n": 47
+      },
+      "1620": {
+        "weight": 1.004052,
+        "mean_biglietti": 53.3,
+        "total_biglietti": 533,
+        "n": 10
+      },
+      "1050": {
+        "weight": 0.857118,
+        "mean_biglietti": 45.5,
+        "total_biglietti": 637,
+        "n": 14
+      },
+      "1100": {
+        "weight": 0.842047,
+        "mean_biglietti": 44.7,
+        "total_biglietti": 447,
+        "n": 10
+      },
+      "1710": {
+        "weight": 0.79668,
+        "mean_biglietti": 42.292,
+        "total_biglietti": 1015,
+        "n": 24
+      },
+      "1310": {
+        "weight": 0.779053,
+        "mean_biglietti": 41.356,
+        "total_biglietti": 2440,
+        "n": 59
+      },
+      "1630": {
+        "weight": 0.729238,
+        "mean_biglietti": 38.712,
+        "total_biglietti": 2013,
+        "n": 52
+      },
+      "0955": {
+        "weight": 0.695174,
+        "mean_biglietti": 36.903,
+        "total_biglietti": 1144,
+        "n": 31
+      },
+      "1145": {
+        "weight": 0.642577,
+        "mean_biglietti": 34.111,
+        "total_biglietti": 307,
+        "n": 9
+      },
+      "0835": {
+        "weight": 0.58397,
+        "mean_biglietti": 31.0,
+        "total_biglietti": 310,
+        "n": 10
+      },
+      "1350": {
+        "weight": 0.548178,
+        "mean_biglietti": 29.1,
+        "total_biglietti": 291,
+        "n": 10
+      },
+      "0030": {
+        "weight": 0.546295,
+        "mean_biglietti": 29.0,
+        "total_biglietti": 29,
+        "n": 1
+      },
+      "0825": {
+        "weight": 0.536876,
+        "mean_biglietti": 28.5,
+        "total_biglietti": 285,
+        "n": 10
+      },
+      "1800": {
+        "weight": 0.524317,
+        "mean_biglietti": 27.833,
+        "total_biglietti": 2839,
+        "n": 102
+      },
+      "0925": {
+        "weight": 0.521178,
+        "mean_biglietti": 27.667,
+        "total_biglietti": 83,
+        "n": 3
+      },
+      "0920": {
+        "weight": 0.519922,
+        "mean_biglietti": 27.6,
+        "total_biglietti": 828,
+        "n": 30
+      },
+      "1500": {
+        "weight": 0.504709,
+        "mean_biglietti": 26.792,
+        "total_biglietti": 1420,
+        "n": 53
+      },
+      "1340": {
+        "weight": 0.472927,
+        "mean_biglietti": 25.105,
+        "total_biglietti": 477,
+        "n": 19
+      },
+      "0900": {
+        "weight": 0.440716,
+        "mean_biglietti": 23.395,
+        "total_biglietti": 1006,
+        "n": 43
+      },
+      "1555": {
+        "weight": 0.422803,
+        "mean_biglietti": 22.444,
+        "total_biglietti": 202,
+        "n": 9
+      },
+      "1730": {
+        "weight": 0.349545,
+        "mean_biglietti": 18.556,
+        "total_biglietti": 167,
+        "n": 9
+      },
+      "1120": {
+        "weight": 0.34187,
+        "mean_biglietti": 18.148,
+        "total_biglietti": 980,
+        "n": 54
+      },
+      "1020": {
+        "weight": 0.326038,
+        "mean_biglietti": 17.308,
+        "total_biglietti": 450,
+        "n": 26
+      },
+      "0910": {
+        "weight": 0.324789,
+        "mean_biglietti": 17.241,
+        "total_biglietti": 500,
+        "n": 29
+      },
+      "1300": {
+        "weight": 0.311512,
+        "mean_biglietti": 16.537,
+        "total_biglietti": 1356,
+        "n": 82
+      },
+      "1725": {
+        "weight": 0.304829,
+        "mean_biglietti": 16.182,
+        "total_biglietti": 178,
+        "n": 11
+      },
+      "1545": {
+        "weight": 0.30362,
+        "mean_biglietti": 16.118,
+        "total_biglietti": 274,
+        "n": 17
+      },
+      "1645": {
+        "weight": 0.303497,
+        "mean_biglietti": 16.111,
+        "total_biglietti": 435,
+        "n": 27
+      },
+      "1855": {
+        "weight": 0.27838,
+        "mean_biglietti": 14.778,
+        "total_biglietti": 133,
+        "n": 9
+      },
+      "1720": {
+        "weight": 0.253682,
+        "mean_biglietti": 13.467,
+        "total_biglietti": 202,
+        "n": 15
+      },
+      "1150": {
+        "weight": 0.246657,
+        "mean_biglietti": 13.094,
+        "total_biglietti": 419,
+        "n": 32
+      },
+      "1715": {
+        "weight": 0.229585,
+        "mean_biglietti": 12.188,
+        "total_biglietti": 195,
+        "n": 16
+      },
+      "1935": {
+        "weight": 0.229377,
+        "mean_biglietti": 12.176,
+        "total_biglietti": 207,
+        "n": 17
+      },
+      "1010": {
+        "weight": 0.228996,
+        "mean_biglietti": 12.156,
+        "total_biglietti": 389,
+        "n": 32
+      },
+      "1655": {
+        "weight": 0.21489,
+        "mean_biglietti": 11.407,
+        "total_biglietti": 308,
+        "n": 27
+      },
+      "1815": {
+        "weight": 0.21064,
+        "mean_biglietti": 11.182,
+        "total_biglietti": 246,
+        "n": 22
+      },
+      "1850": {
+        "weight": 0.209906,
+        "mean_biglietti": 11.143,
+        "total_biglietti": 78,
+        "n": 7
+      },
+      "0915": {
+        "weight": 0.197796,
+        "mean_biglietti": 10.5,
+        "total_biglietti": 21,
+        "n": 2
+      },
+      "1825": {
+        "weight": 0.192145,
+        "mean_biglietti": 10.2,
+        "total_biglietti": 255,
+        "n": 25
+      },
+      "1430": {
+        "weight": 0.190471,
+        "mean_biglietti": 10.111,
+        "total_biglietti": 364,
+        "n": 36
+      },
+      "1640": {
+        "weight": 0.189296,
+        "mean_biglietti": 10.049,
+        "total_biglietti": 412,
+        "n": 41
+      },
+      "1505": {
+        "weight": 0.170396,
+        "mean_biglietti": 9.045,
+        "total_biglietti": 199,
+        "n": 22
+      },
+      "1135": {
+        "weight": 0.15272,
+        "mean_biglietti": 8.107,
+        "total_biglietti": 227,
+        "n": 28
+      },
+      "1440": {
+        "weight": 0.149356,
+        "mean_biglietti": 7.929,
+        "total_biglietti": 222,
+        "n": 28
+      },
+      "1840": {
+        "weight": 0.142139,
+        "mean_biglietti": 7.545,
+        "total_biglietti": 83,
+        "n": 11
+      },
+      "1000": {
+        "weight": 0.139796,
+        "mean_biglietti": 7.421,
+        "total_biglietti": 141,
+        "n": 19
+      },
+      "1912": {
+        "weight": 0.138143,
+        "mean_biglietti": 7.333,
+        "total_biglietti": 22,
+        "n": 3
+      },
+      "1845": {
+        "weight": 0.13766,
+        "mean_biglietti": 7.308,
+        "total_biglietti": 95,
+        "n": 13
+      },
+      "1925": {
+        "weight": 0.137516,
+        "mean_biglietti": 7.3,
+        "total_biglietti": 219,
+        "n": 30
+      },
+      "2000": {
+        "weight": 0.123791,
+        "mean_biglietti": 6.571,
+        "total_biglietti": 46,
+        "n": 7
+      },
+      "1515": {
+        "weight": 0.111143,
+        "mean_biglietti": 5.9,
+        "total_biglietti": 59,
+        "n": 10
+      },
+      "1325": {
+        "weight": 0.103608,
+        "mean_biglietti": 5.5,
+        "total_biglietti": 77,
+        "n": 14
+      },
+      "1320": {
+        "weight": 0.103054,
+        "mean_biglietti": 5.471,
+        "total_biglietti": 93,
+        "n": 17
+      },
+      "1650": {
+        "weight": 0.098284,
+        "mean_biglietti": 5.217,
+        "total_biglietti": 120,
+        "n": 23
+      },
+      "1205": {
+        "weight": 0.095235,
+        "mean_biglietti": 5.056,
+        "total_biglietti": 91,
+        "n": 18
+      },
+      "1315": {
+        "weight": 0.088956,
+        "mean_biglietti": 4.722,
+        "total_biglietti": 85,
+        "n": 18
+      },
+      "1950": {
+        "weight": 0.088807,
+        "mean_biglietti": 4.714,
+        "total_biglietti": 66,
+        "n": 14
+      },
+      "1810": {
+        "weight": 0.083723,
+        "mean_biglietti": 4.444,
+        "total_biglietti": 80,
+        "n": 18
+      },
+      "1215": {
+        "weight": 0.075351,
+        "mean_biglietti": 4.0,
+        "total_biglietti": 28,
+        "n": 7
+      },
+      "1345": {
+        "weight": 0.075351,
+        "mean_biglietti": 4.0,
+        "total_biglietti": 20,
+        "n": 5
+      },
+      "1510": {
+        "weight": 0.075351,
+        "mean_biglietti": 4.0,
+        "total_biglietti": 80,
+        "n": 20
+      },
+      "1820": {
+        "weight": 0.074174,
+        "mean_biglietti": 3.938,
+        "total_biglietti": 63,
+        "n": 16
+      },
+      "1520": {
+        "weight": 0.065436,
+        "mean_biglietti": 3.474,
+        "total_biglietti": 66,
+        "n": 19
+      },
+      "1355": {
+        "weight": 0.051804,
+        "mean_biglietti": 2.75,
+        "total_biglietti": 22,
+        "n": 8
+      }
+    },
+    "ride_weights": {
+      "AMASAC-1745": {
+        "weight": 8.728846,
+        "mean_biglietti_shrunk": 463.37,
+        "mean_biglietti_raw": 552.1,
+        "route": "AMASAC",
+        "n": 10
+      },
+      "POSAMA-1330": {
+        "weight": 8.410381,
+        "mean_biglietti_shrunk": 446.464,
+        "mean_biglietti_raw": 506.8,
+        "route": "POSAMA",
+        "n": 10
+      },
+      "POSAMA-1530": {
+        "weight": 7.466854,
+        "mean_biglietti_shrunk": 396.377,
+        "mean_biglietti_raw": 431.231,
+        "route": "POSAMA",
+        "n": 13
+      },
+      "AMASAC-1615": {
+        "weight": 7.434799,
+        "mean_biglietti_shrunk": 394.676,
+        "mean_biglietti_raw": 447.077,
+        "route": "AMASAC",
+        "n": 13
+      },
+      "POSAMA-1700": {
+        "weight": 5.447058,
+        "mean_biglietti_shrunk": 289.157,
+        "mean_biglietti_raw": 302.3,
+        "route": "POSAMA",
+        "n": 10
+      },
+      "SACAMA-0940": {
+        "weight": 5.389874,
+        "mean_biglietti_shrunk": 286.121,
+        "mean_biglietti_raw": 343.222,
+        "route": "SACAMA",
+        "n": 9
+      },
+      "AMASAC-1910": {
+        "weight": 5.359727,
+        "mean_biglietti_shrunk": 284.521,
+        "mean_biglietti_raw": 313.75,
+        "route": "AMASAC",
+        "n": 12
+      },
+      "POSAMA-1830": {
+        "weight": 5.012141,
+        "mean_biglietti_shrunk": 266.069,
+        "mean_biglietti_raw": 271.25,
+        "route": "POSAMA",
+        "n": 12
+      },
+      "POSAMA-1130": {
+        "weight": 4.339016,
+        "mean_biglietti_shrunk": 230.336,
+        "mean_biglietti_raw": 225.333,
+        "route": "POSAMA",
+        "n": 9
+      },
+      "AMASAC-1410": {
+        "weight": 4.103454,
+        "mean_biglietti_shrunk": 217.831,
+        "mean_biglietti_raw": 232.9,
+        "route": "AMASAC",
+        "n": 10
+      },
+      "SACPOS-0940": {
+        "weight": 4.070523,
+        "mean_biglietti_shrunk": 216.083,
+        "mean_biglietti_raw": 256.111,
+        "route": "SACPOS",
+        "n": 9
+      },
+      "SACAMA-1040": {
+        "weight": 3.499046,
+        "mean_biglietti_shrunk": 185.746,
+        "mean_biglietti_raw": 205.091,
+        "route": "SACAMA",
+        "n": 11
+      },
+      "SACPOS-0840": {
+        "weight": 3.254894,
+        "mean_biglietti_shrunk": 172.786,
+        "mean_biglietti_raw": 193.727,
+        "route": "SACPOS",
+        "n": 11
+      },
+      "SACAMA-0840": {
+        "weight": 3.133055,
+        "mean_biglietti_shrunk": 166.318,
+        "mean_biglietti_raw": 180.364,
+        "route": "SACAMA",
+        "n": 11
+      },
+      "POSSAC-1700": {
+        "weight": 3.129527,
+        "mean_biglietti_shrunk": 166.131,
+        "mean_biglietti_raw": 195.4,
+        "route": "POSSAC",
+        "n": 10
+      },
+      "POSAMA-1310": {
+        "weight": 3.127198,
+        "mean_biglietti_shrunk": 166.007,
+        "mean_biglietti_raw": 47.0,
+        "route": "POSAMA",
+        "n": 2
+      },
+      "AMAPOS-1130": {
+        "weight": 2.699958,
+        "mean_biglietti_shrunk": 143.327,
+        "mean_biglietti_raw": 156.364,
+        "route": "AMAPOS",
+        "n": 11
+      },
+      "POSSAC-1830": {
+        "weight": 2.690907,
+        "mean_biglietti_shrunk": 142.847,
+        "mean_biglietti_raw": 161.417,
+        "route": "POSSAC",
+        "n": 12
+      },
+      "AMASAC-0900": {
+        "weight": 2.62903,
+        "mean_biglietti_shrunk": 139.562,
+        "mean_biglietti_raw": 97.5,
+        "route": "AMASAC",
+        "n": 2
+      },
+      "POSAMA-1200": {
+        "weight": 2.59966,
+        "mean_biglietti_shrunk": 138.003,
+        "mean_biglietti_raw": 105.8,
+        "route": "POSAMA",
+        "n": 10
+      },
+      "AMAPOS-1030": {
+        "weight": 2.479641,
+        "mean_biglietti_shrunk": 131.631,
+        "mean_biglietti_raw": 143.667,
+        "route": "AMAPOS",
+        "n": 9
+      },
+      "AMAMAI-1415": {
+        "weight": 2.437799,
+        "mean_biglietti_shrunk": 129.41,
+        "mean_biglietti_raw": 139.714,
+        "route": "AMAMAI",
+        "n": 14
+      },
+      "AMAPOS-1400": {
+        "weight": 2.372988,
+        "mean_biglietti_shrunk": 125.97,
+        "mean_biglietti_raw": 134.273,
+        "route": "AMAPOS",
+        "n": 11
+      },
+      "SACAMA-1310": {
+        "weight": 2.325723,
+        "mean_biglietti_shrunk": 123.461,
+        "mean_biglietti_raw": 125.818,
+        "route": "SACAMA",
+        "n": 11
+      },
+      "SACAMA-1110": {
+        "weight": 2.224807,
+        "mean_biglietti_shrunk": 118.104,
+        "mean_biglietti_raw": 119.0,
+        "route": "SACAMA",
+        "n": 11
+      },
+      "AMAMAI-1910": {
+        "weight": 2.022674,
+        "mean_biglietti_shrunk": 107.373,
+        "mean_biglietti_raw": 113.385,
+        "route": "AMAMAI",
+        "n": 13
+      },
+      "SACPOS-1110": {
+        "weight": 1.90934,
+        "mean_biglietti_shrunk": 101.357,
+        "mean_biglietti_raw": 102.818,
+        "route": "SACPOS",
+        "n": 11
+      },
+      "SACPOS-1140": {
+        "weight": 1.898576,
+        "mean_biglietti_shrunk": 100.786,
+        "mean_biglietti_raw": 102.091,
+        "route": "SACPOS",
+        "n": 11
+      },
+      "SACPOS-1040": {
+        "weight": 1.8609,
+        "mean_biglietti_shrunk": 98.786,
+        "mean_biglietti_raw": 99.545,
+        "route": "SACPOS",
+        "n": 11
+      },
+      "SACAMA-1140": {
+        "weight": 1.841642,
+        "mean_biglietti_shrunk": 97.763,
+        "mean_biglietti_raw": 93.5,
+        "route": "SACAMA",
+        "n": 12
+      },
+      "SACAMA-1410": {
+        "weight": 1.809077,
+        "mean_biglietti_shrunk": 96.035,
+        "mean_biglietti_raw": 90.4,
+        "route": "SACAMA",
+        "n": 10
+      },
+      "POSAMA-0955": {
+        "weight": 1.767664,
+        "mean_biglietti_shrunk": 93.836,
+        "mean_biglietti_raw": 43.333,
+        "route": "POSAMA",
+        "n": 9
+      },
+      "AMASAC-1245": {
+        "weight": 1.745838,
+        "mean_biglietti_shrunk": 92.678,
+        "mean_biglietti_raw": 70.2,
+        "route": "AMASAC",
+        "n": 10
+      },
+      "AMAPOS-1230": {
+        "weight": 1.728468,
+        "mean_biglietti_shrunk": 91.756,
+        "mean_biglietti_raw": 90.727,
+        "route": "AMAPOS",
+        "n": 11
+      },
+      "AMASAC-1035": {
+        "weight": 1.72781,
+        "mean_biglietti_shrunk": 91.721,
+        "mean_biglietti_raw": 72.75,
+        "route": "AMASAC",
+        "n": 12
+      },
+      "SACAMA-1200": {
+        "weight": 1.669265,
+        "mean_biglietti_shrunk": 88.613,
+        "mean_biglietti_raw": 10.0,
+        "route": "SACAMA",
+        "n": 1
+      },
+      "AMAPOS-1500": {
+        "weight": 1.665805,
+        "mean_biglietti_shrunk": 88.429,
+        "mean_biglietti_raw": 86.3,
+        "route": "AMAPOS",
+        "n": 10
+      },
+      "AMASAC-1912": {
+        "weight": 1.647703,
+        "mean_biglietti_shrunk": 87.468,
+        "mean_biglietti_raw": 7.333,
+        "route": "AMASAC",
+        "n": 3
+      },
+      "AMASAC-1210": {
+        "weight": 1.529637,
+        "mean_biglietti_shrunk": 81.201,
+        "mean_biglietti_raw": 57.636,
+        "route": "AMASAC",
+        "n": 11
+      },
+      "AMAPOS-1800": {
+        "weight": 1.510257,
+        "mean_biglietti_shrunk": 80.172,
+        "mean_biglietti_raw": 76.333,
+        "route": "AMAPOS",
+        "n": 12
+      },
+      "AMAMAI-1630": {
+        "weight": 1.494039,
+        "mean_biglietti_shrunk": 79.311,
+        "mean_biglietti_raw": 78.846,
+        "route": "AMAMAI",
+        "n": 13
+      },
+      "SACAMA-1710": {
+        "weight": 1.481213,
+        "mean_biglietti_shrunk": 78.63,
+        "mean_biglietti_raw": 69.583,
+        "route": "SACAMA",
+        "n": 12
+      },
+      "MAIAMA-0945": {
+        "weight": 1.410783,
+        "mean_biglietti_shrunk": 74.891,
+        "mean_biglietti_raw": 82.929,
+        "route": "MAIAMA",
+        "n": 14
+      },
+      "POSSAC-1530": {
+        "weight": 1.401879,
+        "mean_biglietti_shrunk": 74.419,
+        "mean_biglietti_raw": 75.769,
+        "route": "POSSAC",
+        "n": 13
+      },
+      "AMASAC-1415": {
+        "weight": 1.390788,
+        "mean_biglietti_shrunk": 73.83,
+        "mean_biglietti_raw": 3.5,
+        "route": "AMASAC",
+        "n": 4
+      },
+      "AMASAC-1300": {
+        "weight": 1.366568,
+        "mean_biglietti_shrunk": 72.544,
+        "mean_biglietti_raw": 1.25,
+        "route": "AMASAC",
+        "n": 4
+      },
+      "SACAMA-1530": {
+        "weight": 1.354073,
+        "mean_biglietti_shrunk": 71.881,
+        "mean_biglietti_raw": 59.0,
+        "route": "SACAMA",
+        "n": 10
+      },
+      "SACAMA-1640": {
+        "weight": 1.312806,
+        "mean_biglietti_shrunk": 69.69,
+        "mean_biglietti_raw": 2.0,
+        "route": "SACAMA",
+        "n": 2
+      },
+      "AMAPOS-0920": {
+        "weight": 1.312692,
+        "mean_biglietti_shrunk": 69.684,
+        "mean_biglietti_raw": 62.636,
+        "route": "AMAPOS",
+        "n": 11
+      },
+      "POSAMA-1000": {
+        "weight": 1.292011,
+        "mean_biglietti_shrunk": 68.586,
+        "mean_biglietti_raw": 9.667,
+        "route": "POSAMA",
+        "n": 9
+      },
+      "AMAMAI-0900": {
+        "weight": 1.290268,
+        "mean_biglietti_shrunk": 68.494,
+        "mean_biglietti_raw": 30.0,
+        "route": "AMAMAI",
+        "n": 1
+      },
+      "AMAMAI-1800": {
+        "weight": 1.271519,
+        "mean_biglietti_shrunk": 67.498,
+        "mean_biglietti_raw": 64.308,
+        "route": "AMAMAI",
+        "n": 13
+      },
+      "AMAPOS-1200": {
+        "weight": 1.264416,
+        "mean_biglietti_shrunk": 67.121,
+        "mean_biglietti_raw": 58.6,
+        "route": "AMAPOS",
+        "n": 10
+      },
+      "AMAPOS-1620": {
+        "weight": 1.187616,
+        "mean_biglietti_shrunk": 63.044,
+        "mean_biglietti_raw": 53.3,
+        "route": "AMAPOS",
+        "n": 10
+      },
+      "AMAMAI-1300": {
+        "weight": 1.166455,
+        "mean_biglietti_shrunk": 61.921,
+        "mean_biglietti_raw": 56.1,
+        "route": "AMAMAI",
+        "n": 10
+      },
+      "SACPOS-1310": {
+        "weight": 1.124883,
+        "mean_biglietti_shrunk": 59.714,
+        "mean_biglietti_raw": 49.818,
+        "route": "SACPOS",
+        "n": 11
+      },
+      "SACPOS-1410": {
+        "weight": 1.108529,
+        "mean_biglietti_shrunk": 58.846,
+        "mean_biglietti_raw": 47.7,
+        "route": "SACPOS",
+        "n": 10
+      },
+      "MAIAMA-1050": {
+        "weight": 1.073972,
+        "mean_biglietti_shrunk": 57.012,
+        "mean_biglietti_raw": 62.9,
+        "route": "MAIAMA",
+        "n": 10
+      },
+      "SACVSM-2200": {
+        "weight": 1.073384,
+        "mean_biglietti_shrunk": 56.98,
+        "mean_biglietti_raw": 180.0,
+        "route": "SACVSM",
+        "n": 1
+      },
+      "AMAMIN-1910": {
+        "weight": 1.017351,
+        "mean_biglietti_shrunk": 54.006,
+        "mean_biglietti_raw": 58.75,
+        "route": "AMAMIN",
+        "n": 12
+      },
+      "AMASAC-1120": {
+        "weight": 1.00524,
+        "mean_biglietti_shrunk": 53.363,
+        "mean_biglietti_raw": 27.0,
+        "route": "AMASAC",
+        "n": 13
+      },
+      "SACVSM-2100": {
+        "weight": 0.993324,
+        "mean_biglietti_shrunk": 52.73,
+        "mean_biglietti_raw": 163.0,
+        "route": "SACVSM",
+        "n": 1
+      },
+      "AMASAC-1630": {
+        "weight": 0.979203,
+        "mean_biglietti_shrunk": 51.981,
+        "mean_biglietti_raw": 2.429,
+        "route": "AMASAC",
+        "n": 7
+      },
+      "AMAMIN-1630": {
+        "weight": 0.937972,
+        "mean_biglietti_shrunk": 49.792,
+        "mean_biglietti_raw": 53.818,
+        "route": "AMAMIN",
+        "n": 11
+      },
+      "MINAMA-0955": {
+        "weight": 0.87885,
+        "mean_biglietti_shrunk": 46.654,
+        "mean_biglietti_raw": 50.0,
+        "route": "MINAMA",
+        "n": 13
+      },
+      "POSSAC-1330": {
+        "weight": 0.86465,
+        "mean_biglietti_shrunk": 45.9,
+        "mean_biglietti_raw": 39.1,
+        "route": "POSSAC",
+        "n": 10
+      },
+      "MAIAMA-1145": {
+        "weight": 0.840992,
+        "mean_biglietti_shrunk": 44.644,
+        "mean_biglietti_raw": 49.0,
+        "route": "MAIAMA",
+        "n": 5
+      },
+      "SACAMA-1800": {
+        "weight": 0.826616,
+        "mean_biglietti_shrunk": 43.881,
+        "mean_biglietti_raw": 22.6,
+        "route": "SACAMA",
+        "n": 10
+      },
+      "MINAMA-1100": {
+        "weight": 0.787503,
+        "mean_biglietti_shrunk": 41.805,
+        "mean_biglietti_raw": 44.7,
+        "route": "MINAMA",
+        "n": 10
+      },
+      "AMASAC-1800": {
+        "weight": 0.786561,
+        "mean_biglietti_shrunk": 41.755,
+        "mean_biglietti_raw": 4.0,
+        "route": "AMASAC",
+        "n": 10
+      },
+      "SACPOS-1530": {
+        "weight": 0.744816,
+        "mean_biglietti_shrunk": 39.538,
+        "mean_biglietti_raw": 22.6,
+        "route": "SACPOS",
+        "n": 10
+      },
+      "AMAMAI-1120": {
+        "weight": 0.734643,
+        "mean_biglietti_shrunk": 38.998,
+        "mean_biglietti_raw": 29.231,
+        "route": "AMAMAI",
+        "n": 13
+      },
+      "MINAMA-1200": {
+        "weight": 0.71707,
+        "mean_biglietti_shrunk": 38.066,
+        "mean_biglietti_raw": 42.5,
+        "route": "MINAMA",
+        "n": 4
+      },
+      "AMAMIN-1415": {
+        "weight": 0.680784,
+        "mean_biglietti_shrunk": 36.139,
+        "mean_biglietti_raw": 36.417,
+        "route": "AMAMIN",
+        "n": 12
+      },
+      "SACVSM-2300": {
+        "weight": 0.663663,
+        "mean_biglietti_shrunk": 35.23,
+        "mean_biglietti_raw": 93.0,
+        "route": "SACVSM",
+        "n": 1
+      },
+      "AMAVSM-1910": {
+        "weight": 0.647485,
+        "mean_biglietti_shrunk": 34.372,
+        "mean_biglietti_raw": 38.083,
+        "route": "AMAVSM",
+        "n": 12
+      },
+      "SACMAI-0900": {
+        "weight": 0.61237,
+        "mean_biglietti_shrunk": 32.508,
+        "mean_biglietti_raw": 34.214,
+        "route": "SACMAI",
+        "n": 14
+      },
+      "MAIAMA-1340": {
+        "weight": 0.594745,
+        "mean_biglietti_shrunk": 31.572,
+        "mean_biglietti_raw": 30.231,
+        "route": "MAIAMA",
+        "n": 13
+      },
+      "SACAMA-1500": {
+        "weight": 0.593318,
+        "mean_biglietti_shrunk": 31.496,
+        "mean_biglietti_raw": 6.5,
+        "route": "SACAMA",
+        "n": 10
+      },
+      "MINAMA-0835": {
+        "weight": 0.588982,
+        "mean_biglietti_shrunk": 31.266,
+        "mean_biglietti_raw": 31.0,
+        "route": "MINAMA",
+        "n": 10
+      },
+      "SACPOS-1710": {
+        "weight": 0.587738,
+        "mean_biglietti_shrunk": 31.2,
+        "mean_biglietti_raw": 15.0,
+        "route": "SACPOS",
+        "n": 12
+      },
+      "VSMAMA-1020": {
+        "weight": 0.579882,
+        "mean_biglietti_shrunk": 30.783,
+        "mean_biglietti_raw": 33.9,
+        "route": "VSMAMA",
+        "n": 10
+      },
+      "MAIAMA-0825": {
+        "weight": 0.575496,
+        "mean_biglietti_shrunk": 30.55,
+        "mean_biglietti_raw": 28.5,
+        "route": "MAIAMA",
+        "n": 10
+      },
+      "MINAMA-1350": {
+        "weight": 0.56145,
+        "mean_biglietti_shrunk": 29.805,
+        "mean_biglietti_raw": 29.1,
+        "route": "MINAMA",
+        "n": 10
+      },
+      "VSMAMA-0910": {
+        "weight": 0.557574,
+        "mean_biglietti_shrunk": 29.599,
+        "mean_biglietti_raw": 31.571,
+        "route": "VSMAMA",
+        "n": 14
+      },
+      "AMAMIN-1800": {
+        "weight": 0.556569,
+        "mean_biglietti_shrunk": 29.545,
+        "mean_biglietti_raw": 27.9,
+        "route": "AMAMIN",
+        "n": 10
+      },
+      "SACMAI-1500": {
+        "weight": 0.553869,
+        "mean_biglietti_shrunk": 29.402,
+        "mean_biglietti_raw": 30.727,
+        "route": "SACMAI",
+        "n": 11
+      },
+      "POSSAC-1130": {
+        "weight": 0.551271,
+        "mean_biglietti_shrunk": 29.264,
+        "mean_biglietti_raw": 18.545,
+        "route": "POSSAC",
+        "n": 11
+      },
+      "AMAMIN-0900": {
+        "weight": 0.53259,
+        "mean_biglietti_shrunk": 28.273,
+        "mean_biglietti_raw": 8.0,
+        "route": "AMAMIN",
+        "n": 1
+      },
+      "MAISAC-0925": {
+        "weight": 0.507658,
+        "mean_biglietti_shrunk": 26.949,
+        "mean_biglietti_raw": 40.5,
+        "route": "MAISAC",
+        "n": 2
+      },
+      "AMAVSM-1630": {
+        "weight": 0.498628,
+        "mean_biglietti_shrunk": 26.47,
+        "mean_biglietti_raw": 28.364,
+        "route": "AMAVSM",
+        "n": 11
+      },
+      "POSSAC-0955": {
+        "weight": 0.486168,
+        "mean_biglietti_shrunk": 25.808,
+        "mean_biglietti_raw": 11.556,
+        "route": "POSSAC",
+        "n": 9
+      },
+      "MINAMA-1555": {
+        "weight": 0.468525,
+        "mean_biglietti_shrunk": 24.872,
+        "mean_biglietti_raw": 22.444,
+        "route": "MINAMA",
+        "n": 9
+      },
+      "POSSAC-1200": {
+        "weight": 0.458439,
+        "mean_biglietti_shrunk": 24.336,
+        "mean_biglietti_raw": 7.75,
+        "route": "POSSAC",
+        "n": 8
+      },
+      "MAIAMA-1545": {
+        "weight": 0.453656,
+        "mean_biglietti_shrunk": 24.082,
+        "mean_biglietti_raw": 20.455,
+        "route": "MAIAMA",
+        "n": 11
+      },
+      "VSMAMA-1310": {
+        "weight": 0.438891,
+        "mean_biglietti_shrunk": 23.298,
+        "mean_biglietti_raw": 24.091,
+        "route": "VSMAMA",
+        "n": 11
+      },
+      "MAISAC-1150": {
+        "weight": 0.437677,
+        "mean_biglietti_shrunk": 23.234,
+        "mean_biglietti_raw": 24.462,
+        "route": "MAISAC",
+        "n": 13
+      },
+      "SACMAI-1300": {
+        "weight": 0.430291,
+        "mean_biglietti_shrunk": 22.842,
+        "mean_biglietti_raw": 22.417,
+        "route": "SACMAI",
+        "n": 12
+      },
+      "MINAMA-1730": {
+        "weight": 0.413581,
+        "mean_biglietti_shrunk": 21.955,
+        "mean_biglietti_raw": 18.556,
+        "route": "MINAMA",
+        "n": 9
+      },
+      "SACMAI-1010": {
+        "weight": 0.406648,
+        "mean_biglietti_shrunk": 21.587,
+        "mean_biglietti_raw": 20.7,
+        "route": "SACMAI",
+        "n": 10
+      },
+      "MAISAC-1655": {
+        "weight": 0.390249,
+        "mean_biglietti_shrunk": 20.716,
+        "mean_biglietti_raw": 21.417,
+        "route": "MAISAC",
+        "n": 12
+      },
+      "SACMAI-1640": {
+        "weight": 0.385737,
+        "mean_biglietti_shrunk": 20.477,
+        "mean_biglietti_raw": 19.538,
+        "route": "SACMAI",
+        "n": 13
+      },
+      "AMAVSM-1800": {
+        "weight": 0.382911,
+        "mean_biglietti_shrunk": 20.327,
+        "mean_biglietti_raw": 20.545,
+        "route": "AMAVSM",
+        "n": 11
+      },
+      "POSSAC-1000": {
+        "weight": 0.376317,
+        "mean_biglietti_shrunk": 19.977,
+        "mean_biglietti_raw": 5.4,
+        "route": "POSSAC",
+        "n": 10
+      },
+      "SACMIN-0900": {
+        "weight": 0.373316,
+        "mean_biglietti_shrunk": 19.817,
+        "mean_biglietti_raw": 21.833,
+        "route": "SACMIN",
+        "n": 12
+      },
+      "AMAMIN-1120": {
+        "weight": 0.372839,
+        "mean_biglietti_shrunk": 19.792,
+        "mean_biglietti_raw": 15.636,
+        "route": "AMAMIN",
+        "n": 11
+      },
+      "MAIAMA-1720": {
+        "weight": 0.36516,
+        "mean_biglietti_shrunk": 19.384,
+        "mean_biglietti_raw": 15.231,
+        "route": "MAIAMA",
+        "n": 13
+      },
+      "SACMAI-1800": {
+        "weight": 0.354482,
+        "mean_biglietti_shrunk": 18.818,
+        "mean_biglietti_raw": 17.1,
+        "route": "SACMAI",
+        "n": 10
+      },
+      "AMAMIN-1300": {
+        "weight": 0.351779,
+        "mean_biglietti_shrunk": 18.674,
+        "mean_biglietti_raw": 13.222,
+        "route": "AMAMIN",
+        "n": 9
+      },
+      "MINSAC-1815": {
+        "weight": 0.338979,
+        "mean_biglietti_shrunk": 17.995,
+        "mean_biglietti_raw": 19.556,
+        "route": "MINSAC",
+        "n": 9
+      },
+      "MAISAC-1825": {
+        "weight": 0.334992,
+        "mean_biglietti_shrunk": 17.783,
+        "mean_biglietti_raw": 17.75,
+        "route": "MAISAC",
+        "n": 12
+      },
+      "MINAMA-1850": {
+        "weight": 0.328641,
+        "mean_biglietti_shrunk": 17.446,
+        "mean_biglietti_raw": 11.143,
+        "route": "MINAMA",
+        "n": 7
+      },
+      "MINSAC-1645": {
+        "weight": 0.325945,
+        "mean_biglietti_shrunk": 17.303,
+        "mean_biglietti_raw": 18.5,
+        "route": "MINSAC",
+        "n": 10
+      },
+      "MAISAC-1935": {
+        "weight": 0.32259,
+        "mean_biglietti_shrunk": 17.125,
+        "mean_biglietti_raw": 16.909,
+        "route": "MAISAC",
+        "n": 11
+      },
+      "AMAVSM-0900": {
+        "weight": 0.289984,
+        "mean_biglietti_shrunk": 15.394,
+        "mean_biglietti_raw": 3.0,
+        "route": "AMAVSM",
+        "n": 1
+      },
+      "MINMAI-1645": {
+        "weight": 0.287116,
+        "mean_biglietti_shrunk": 15.241,
+        "mean_biglietti_raw": 18.429,
+        "route": "MINMAI",
+        "n": 7
+      },
+      "VSMSAC-1725": {
+        "weight": 0.277211,
+        "mean_biglietti_shrunk": 14.716,
+        "mean_biglietti_raw": 16.182,
+        "route": "VSMSAC",
+        "n": 11
+      },
+      "MAIAMA-1840": {
+        "weight": 0.27699,
+        "mean_biglietti_shrunk": 14.704,
+        "mean_biglietti_raw": 7.9,
+        "route": "MAIAMA",
+        "n": 10
+      },
+      "VSMSAC-0030": {
+        "weight": 0.268532,
+        "mean_biglietti_shrunk": 14.255,
+        "mean_biglietti_raw": 29.0,
+        "route": "VSMSAC",
+        "n": 1
+      },
+      "MINSAC-1925": {
+        "weight": 0.255569,
+        "mean_biglietti_shrunk": 13.567,
+        "mean_biglietti_raw": 13.636,
+        "route": "MINSAC",
+        "n": 11
+      },
+      "MAISAC-1440": {
+        "weight": 0.255187,
+        "mean_biglietti_shrunk": 13.547,
+        "mean_biglietti_raw": 12.538,
+        "route": "MAISAC",
+        "n": 13
+      },
+      "VSMSAC-1855": {
+        "weight": 0.252771,
+        "mean_biglietti_shrunk": 13.418,
+        "mean_biglietti_raw": 14.778,
+        "route": "VSMSAC",
+        "n": 9
+      },
+      "MINVSM-1430": {
+        "weight": 0.248887,
+        "mean_biglietti_shrunk": 13.212,
+        "mean_biglietti_raw": 14.889,
+        "route": "MINVSM",
+        "n": 9
+      },
+      "MINSAC-1135": {
+        "weight": 0.246066,
+        "mean_biglietti_shrunk": 13.062,
+        "mean_biglietti_raw": 13.0,
+        "route": "MINSAC",
+        "n": 12
+      },
+      "MAIMIN-1145": {
+        "weight": 0.23502,
+        "mean_biglietti_shrunk": 12.476,
+        "mean_biglietti_raw": 15.5,
+        "route": "MAIMIN",
+        "n": 4
+      },
+      "AMAVSM-1415": {
+        "weight": 0.234805,
+        "mean_biglietti_shrunk": 12.465,
+        "mean_biglietti_raw": 10.111,
+        "route": "AMAVSM",
+        "n": 9
+      },
+      "MINSAC-0915": {
+        "weight": 0.229579,
+        "mean_biglietti_shrunk": 12.187,
+        "mean_biglietti_raw": 10.5,
+        "route": "MINSAC",
+        "n": 2
+      },
+      "MAIMIN-1340": {
+        "weight": 0.228841,
+        "mean_biglietti_shrunk": 12.148,
+        "mean_biglietti_raw": 14.0,
+        "route": "MAIMIN",
+        "n": 6
+      },
+      "MINSAC-1430": {
+        "weight": 0.219693,
+        "mean_biglietti_shrunk": 11.662,
+        "mean_biglietti_raw": 11.25,
+        "route": "MINSAC",
+        "n": 12
+      },
+      "VSMAMA-1810": {
+        "weight": 0.213079,
+        "mean_biglietti_shrunk": 11.311,
+        "mean_biglietti_raw": 4.5,
+        "route": "VSMAMA",
+        "n": 4
+      },
+      "CETAMA-1030": {
+        "weight": 0.211957,
+        "mean_biglietti_shrunk": 11.252,
+        "mean_biglietti_raw": 12.875,
+        "route": "CETAMA",
+        "n": 8
+      },
+      "SACMIN-1300": {
+        "weight": 0.211056,
+        "mean_biglietti_shrunk": 11.204,
+        "mean_biglietti_raw": 11.077,
+        "route": "SACMIN",
+        "n": 13
+      },
+      "CETVSM-1715": {
+        "weight": 0.209431,
+        "mean_biglietti_shrunk": 11.118,
+        "mean_biglietti_raw": 13.8,
+        "route": "CETVSM",
+        "n": 5
+      },
+      "SACCET-1300": {
+        "weight": 0.208223,
+        "mean_biglietti_shrunk": 11.053,
+        "mean_biglietti_raw": 12.273,
+        "route": "SACCET",
+        "n": 11
+      },
+      "SACVSM-1800": {
+        "weight": 0.203831,
+        "mean_biglietti_shrunk": 10.82,
+        "mean_biglietti_raw": 5.667,
+        "route": "SACVSM",
+        "n": 3
+      },
+      "SACMIN-1500": {
+        "weight": 0.202917,
+        "mean_biglietti_shrunk": 10.772,
+        "mean_biglietti_raw": 10.444,
+        "route": "SACMIN",
+        "n": 9
+      },
+      "CETSAC-1715": {
+        "weight": 0.202128,
+        "mean_biglietti_shrunk": 10.73,
+        "mean_biglietti_raw": 11.455,
+        "route": "CETSAC",
+        "n": 11
+      },
+      "MINCET-1645": {
+        "weight": 0.201564,
+        "mean_biglietti_shrunk": 10.7,
+        "mean_biglietti_raw": 13.4,
+        "route": "MINCET",
+        "n": 5
+      },
+      "CETSAC-1505": {
+        "weight": 0.191363,
+        "mean_biglietti_shrunk": 10.159,
+        "mean_biglietti_raw": 10.727,
+        "route": "CETSAC",
+        "n": 11
+      },
+      "AMAVSM-1120": {
+        "weight": 0.189362,
+        "mean_biglietti_shrunk": 10.052,
+        "mean_biglietti_raw": 6.5,
+        "route": "AMAVSM",
+        "n": 8
+      },
+      "SACVSM-1500": {
+        "weight": 0.185839,
+        "mean_biglietti_shrunk": 9.865,
+        "mean_biglietti_raw": 6.2,
+        "route": "SACVSM",
+        "n": 5
+      },
+      "MINVSM-1645": {
+        "weight": 0.184954,
+        "mean_biglietti_shrunk": 9.818,
+        "mean_biglietti_raw": 10.8,
+        "route": "MINVSM",
+        "n": 5
+      },
+      "MAISAC-1325": {
+        "weight": 0.184516,
+        "mean_biglietti_shrunk": 9.795,
+        "mean_biglietti_raw": 6.75,
+        "route": "MAISAC",
+        "n": 8
+      },
+      "SACMIN-1640": {
+        "weight": 0.182961,
+        "mean_biglietti_shrunk": 9.712,
+        "mean_biglietti_raw": 9.1,
+        "route": "SACMIN",
+        "n": 10
+      },
+      "SACMIN-1010": {
+        "weight": 0.18251,
+        "mean_biglietti_shrunk": 9.688,
+        "mean_biglietti_raw": 9.0,
+        "route": "SACMIN",
+        "n": 9
+      },
+      "VSMAMA-1510": {
+        "weight": 0.18118,
+        "mean_biglietti_shrunk": 9.618,
+        "mean_biglietti_raw": 5.0,
+        "route": "VSMAMA",
+        "n": 7
+      },
+      "AMACET-1910": {
+        "weight": 0.179876,
+        "mean_biglietti_shrunk": 9.549,
+        "mean_biglietti_raw": 10.231,
+        "route": "AMACET",
+        "n": 13
+      },
+      "SACVSM-1300": {
+        "weight": 0.172831,
+        "mean_biglietti_shrunk": 9.175,
+        "mean_biglietti_raw": 6.625,
+        "route": "SACVSM",
+        "n": 8
+      },
+      "SACVSM-1010": {
+        "weight": 0.17147,
+        "mean_biglietti_shrunk": 9.102,
+        "mean_biglietti_raw": 5.667,
+        "route": "SACVSM",
+        "n": 6
+      },
+      "CETAMA-0920": {
+        "weight": 0.170505,
+        "mean_biglietti_shrunk": 9.051,
+        "mean_biglietti_raw": 9.583,
+        "route": "CETAMA",
+        "n": 12
+      },
+      "AMAVSM-1300": {
+        "weight": 0.170442,
+        "mean_biglietti_shrunk": 9.048,
+        "mean_biglietti_raw": 5.556,
+        "route": "AMAVSM",
+        "n": 9
+      },
+      "SACCET-1010": {
+        "weight": 0.163416,
+        "mean_biglietti_shrunk": 8.675,
+        "mean_biglietti_raw": 9.571,
+        "route": "SACCET",
+        "n": 7
+      },
+      "VSMMIN-1020": {
+        "weight": 0.159064,
+        "mean_biglietti_shrunk": 8.444,
+        "mean_biglietti_raw": 10.8,
+        "route": "VSMMIN",
+        "n": 5
+      },
+      "MAIMIN-1545": {
+        "weight": 0.155583,
+        "mean_biglietti_shrunk": 8.259,
+        "mean_biglietti_raw": 8.167,
+        "route": "MAIMIN",
+        "n": 6
+      },
+      "VSMAMA-1650": {
+        "weight": 0.150961,
+        "mean_biglietti_shrunk": 8.014,
+        "mean_biglietti_raw": 4.3,
+        "route": "VSMAMA",
+        "n": 10
+      },
+      "CETSAC-1845": {
+        "weight": 0.14957,
+        "mean_biglietti_shrunk": 7.94,
+        "mean_biglietti_raw": 7.9,
+        "route": "CETSAC",
+        "n": 10
+      },
+      "VSMCET-1310": {
+        "weight": 0.149383,
+        "mean_biglietti_shrunk": 7.93,
+        "mean_biglietti_raw": 8.667,
+        "route": "VSMCET",
+        "n": 9
+      },
+      "MINMAI-1430": {
+        "weight": 0.146956,
+        "mean_biglietti_shrunk": 7.801,
+        "mean_biglietti_raw": 7.8,
+        "route": "MINMAI",
+        "n": 10
+      },
+      "VSMSAC-2000": {
+        "weight": 0.139437,
+        "mean_biglietti_shrunk": 7.402,
+        "mean_biglietti_raw": 6.571,
+        "route": "VSMSAC",
+        "n": 7
+      },
+      "CETAMA-1320": {
+        "weight": 0.138775,
+        "mean_biglietti_shrunk": 7.367,
+        "mean_biglietti_raw": 7.5,
+        "route": "CETAMA",
+        "n": 10
+      },
+      "MAIMIN-1840": {
+        "weight": 0.138137,
+        "mean_biglietti_shrunk": 7.333,
+        "mean_biglietti_raw": 4.0,
+        "route": "MAIMIN",
+        "n": 1
+      },
+      "SACMIN-1800": {
+        "weight": 0.13745,
+        "mean_biglietti_shrunk": 7.297,
+        "mean_biglietti_raw": 5.625,
+        "route": "SACMIN",
+        "n": 8
+      },
+      "VSMMAI-1810": {
+        "weight": 0.135827,
+        "mean_biglietti_shrunk": 7.21,
+        "mean_biglietti_raw": 8.2,
+        "route": "VSMMAI",
+        "n": 5
+      },
+      "CETVSM-1505": {
+        "weight": 0.135822,
+        "mean_biglietti_shrunk": 7.21,
+        "mean_biglietti_raw": 7.364,
+        "route": "CETVSM",
+        "n": 11
+      },
+      "SACVSM-1640": {
+        "weight": 0.135485,
+        "mean_biglietti_shrunk": 7.192,
+        "mean_biglietti_raw": 3.429,
+        "route": "SACVSM",
+        "n": 7
+      },
+      "CETSAC-0945": {
+        "weight": 0.132896,
+        "mean_biglietti_shrunk": 7.055,
+        "mean_biglietti_raw": 4.0,
+        "route": "CETSAC",
+        "n": 1
+      },
+      "AMACET-1415": {
+        "weight": 0.131486,
+        "mean_biglietti_shrunk": 6.98,
+        "mean_biglietti_raw": 7.125,
+        "route": "AMACET",
+        "n": 8
+      },
+      "MINCET-1315": {
+        "weight": 0.128097,
+        "mean_biglietti_shrunk": 6.8,
+        "mean_biglietti_raw": 7.25,
+        "route": "MINCET",
+        "n": 4
+      },
+      "AMACET-1800": {
+        "weight": 0.126348,
+        "mean_biglietti_shrunk": 6.707,
+        "mean_biglietti_raw": 6.75,
+        "route": "AMACET",
+        "n": 8
+      },
+      "VSMSAC-1515": {
+        "weight": 0.126097,
+        "mean_biglietti_shrunk": 6.694,
+        "mean_biglietti_raw": 5.9,
+        "route": "VSMSAC",
+        "n": 10
+      },
+      "AMACET-1630": {
+        "weight": 0.125748,
+        "mean_biglietti_shrunk": 6.675,
+        "mean_biglietti_raw": 6.7,
+        "route": "AMACET",
+        "n": 10
+      },
+      "SACVSM-0900": {
+        "weight": 0.125422,
+        "mean_biglietti_shrunk": 6.658,
+        "mean_biglietti_raw": 2.0,
+        "route": "SACVSM",
+        "n": 6
+      },
+      "MINVSM-1315": {
+        "weight": 0.125017,
+        "mean_biglietti_shrunk": 6.636,
+        "mean_biglietti_raw": 2.0,
+        "route": "MINVSM",
+        "n": 1
+      },
+      "VSMMAI-1650": {
+        "weight": 0.124921,
+        "mean_biglietti_shrunk": 6.631,
+        "mean_biglietti_raw": 7.167,
+        "route": "VSMMAI",
+        "n": 6
+      },
+      "MINVSM-1815": {
+        "weight": 0.124635,
+        "mean_biglietti_shrunk": 6.616,
+        "mean_biglietti_raw": 5.833,
+        "route": "MINVSM",
+        "n": 6
+      },
+      "CETSAC-1205": {
+        "weight": 0.12274,
+        "mean_biglietti_shrunk": 6.516,
+        "mean_biglietti_raw": 6.091,
+        "route": "CETSAC",
+        "n": 11
+      },
+      "VSMCET-1650": {
+        "weight": 0.118839,
+        "mean_biglietti_shrunk": 6.309,
+        "mean_biglietti_raw": 6.75,
+        "route": "VSMCET",
+        "n": 4
+      },
+      "MINMAI-1815": {
+        "weight": 0.118081,
+        "mean_biglietti_shrunk": 6.268,
+        "mean_biglietti_raw": 5.5,
+        "route": "MINMAI",
+        "n": 6
+      },
+      "MINSAC-1315": {
+        "weight": 0.118054,
+        "mean_biglietti_shrunk": 6.267,
+        "mean_biglietti_raw": 3.625,
+        "route": "MINSAC",
+        "n": 8
+      },
+      "MINMAI-1315": {
+        "weight": 0.114004,
+        "mean_biglietti_shrunk": 6.052,
+        "mean_biglietti_raw": 5.0,
+        "route": "MINMAI",
+        "n": 5
+      },
+      "MAIMIN-0945": {
+        "weight": 0.11392,
+        "mean_biglietti_shrunk": 6.047,
+        "mean_biglietti_raw": 4.25,
+        "route": "MAIMIN",
+        "n": 4
+      },
+      "CETVSM-1845": {
+        "weight": 0.112841,
+        "mean_biglietti_shrunk": 5.99,
+        "mean_biglietti_raw": 5.333,
+        "route": "CETVSM",
+        "n": 3
+      },
+      "CETVSM-1345": {
+        "weight": 0.112804,
+        "mean_biglietti_shrunk": 5.988,
+        "mean_biglietti_raw": 5.0,
+        "route": "CETVSM",
+        "n": 2
+      },
+      "MAIMIN-1720": {
+        "weight": 0.11051,
+        "mean_biglietti_shrunk": 5.866,
+        "mean_biglietti_raw": 2.0,
+        "route": "MAIMIN",
+        "n": 2
+      },
+      "CETSAC-1950": {
+        "weight": 0.109976,
+        "mean_biglietti_shrunk": 5.838,
+        "mean_biglietti_raw": 5.0,
+        "route": "CETSAC",
+        "n": 8
+      },
+      "MINVSM-1135": {
+        "weight": 0.10789,
+        "mean_biglietti_shrunk": 5.727,
+        "mean_biglietti_raw": 4.5,
+        "route": "MINVSM",
+        "n": 6
+      },
+      "CETSAC-1345": {
+        "weight": 0.107435,
+        "mean_biglietti_shrunk": 5.703,
+        "mean_biglietti_raw": 3.333,
+        "route": "CETSAC",
+        "n": 3
+      },
+      "VSMMAI-1310": {
+        "weight": 0.107346,
+        "mean_biglietti_shrunk": 5.698,
+        "mean_biglietti_raw": 5.75,
+        "route": "VSMMAI",
+        "n": 8
+      },
+      "VSMSAC-1215": {
+        "weight": 0.105529,
+        "mean_biglietti_shrunk": 5.602,
+        "mean_biglietti_raw": 4.0,
+        "route": "VSMSAC",
+        "n": 7
+      },
+      "VSMCET-1020": {
+        "weight": 0.10411,
+        "mean_biglietti_shrunk": 5.527,
+        "mean_biglietti_raw": 5.333,
+        "route": "VSMCET",
+        "n": 3
+      },
+      "MAIVSM-1150": {
+        "weight": 0.103922,
+        "mean_biglietti_shrunk": 5.517,
+        "mean_biglietti_raw": 5.889,
+        "route": "MAIVSM",
+        "n": 9
+      },
+      "MINCET-1135": {
+        "weight": 0.102666,
+        "mean_biglietti_shrunk": 5.45,
+        "mean_biglietti_raw": 5.0,
+        "route": "MINCET",
+        "n": 5
+      },
+      "MINMAI-1925": {
+        "weight": 0.10175,
+        "mean_biglietti_shrunk": 5.401,
+        "mean_biglietti_raw": 4.5,
+        "route": "MINMAI",
+        "n": 8
+      },
+      "MINMAI-1135": {
+        "weight": 0.099875,
+        "mean_biglietti_shrunk": 5.302,
+        "mean_biglietti_raw": 3.8,
+        "route": "MINMAI",
+        "n": 5
+      },
+      "VSMMAI-1020": {
+        "weight": 0.098783,
+        "mean_biglietti_shrunk": 5.244,
+        "mean_biglietti_raw": 5.125,
+        "route": "VSMMAI",
+        "n": 8
+      },
+      "MINCET-1815": {
+        "weight": 0.097014,
+        "mean_biglietti_shrunk": 5.15,
+        "mean_biglietti_raw": 2.0,
+        "route": "MINCET",
+        "n": 1
+      },
+      "CETVSM-1950": {
+        "weight": 0.096158,
+        "mean_biglietti_shrunk": 5.105,
+        "mean_biglietti_raw": 4.333,
+        "route": "CETVSM",
+        "n": 6
+      },
+      "VSMMAI-1510": {
+        "weight": 0.095618,
+        "mean_biglietti_shrunk": 5.076,
+        "mean_biglietti_raw": 4.833,
+        "route": "VSMMAI",
+        "n": 6
+      },
+      "VSMMIN-0910": {
+        "weight": 0.093131,
+        "mean_biglietti_shrunk": 4.944,
+        "mean_biglietti_raw": 5.2,
+        "route": "VSMMIN",
+        "n": 5
+      },
+      "SACCET-1640": {
+        "weight": 0.092225,
+        "mean_biglietti_shrunk": 4.896,
+        "mean_biglietti_raw": 4.333,
+        "route": "SACCET",
+        "n": 9
+      },
+      "SACCET-1800": {
+        "weight": 0.091832,
+        "mean_biglietti_shrunk": 4.875,
+        "mean_biglietti_raw": 4.143,
+        "route": "SACCET",
+        "n": 7
+      },
+      "CETMAI-1820": {
+        "weight": 0.090106,
+        "mean_biglietti_shrunk": 4.783,
+        "mean_biglietti_raw": 5.125,
+        "route": "CETMAI",
+        "n": 8
+      },
+      "MAIMIN-1050": {
+        "weight": 0.0897,
+        "mean_biglietti_shrunk": 4.762,
+        "mean_biglietti_raw": 2.0,
+        "route": "MAIMIN",
+        "n": 4
+      },
+      "MINVSM-1925": {
+        "weight": 0.089052,
+        "mean_biglietti_shrunk": 4.727,
+        "mean_biglietti_raw": 3.0,
+        "route": "MINVSM",
+        "n": 6
+      },
+      "MAIVSM-1440": {
+        "weight": 0.088914,
+        "mean_biglietti_shrunk": 4.72,
+        "mean_biglietti_raw": 4.857,
+        "route": "MAIVSM",
+        "n": 7
+      },
+      "CETAMA-1520": {
+        "weight": 0.086218,
+        "mean_biglietti_shrunk": 4.577,
+        "mean_biglietti_raw": 3.571,
+        "route": "CETAMA",
+        "n": 7
+      },
+      "VSMSAC-1355": {
+        "weight": 0.08566,
+        "mean_biglietti_shrunk": 4.547,
+        "mean_biglietti_raw": 2.75,
+        "route": "VSMSAC",
+        "n": 8
+      },
+      "MAICET-1150": {
+        "weight": 0.085313,
+        "mean_biglietti_shrunk": 4.529,
+        "mean_biglietti_raw": 4.8,
+        "route": "MAICET",
+        "n": 10
+      },
+      "MINCET-1430": {
+        "weight": 0.083828,
+        "mean_biglietti_shrunk": 4.45,
+        "mean_biglietti_raw": 3.4,
+        "route": "MINCET",
+        "n": 5
+      },
+      "SACCET-1500": {
+        "weight": 0.083484,
+        "mean_biglietti_shrunk": 4.432,
+        "mean_biglietti_raw": 3.625,
+        "route": "SACCET",
+        "n": 8
+      },
+      "AMACET-1300": {
+        "weight": 0.083261,
+        "mean_biglietti_shrunk": 4.42,
+        "mean_biglietti_raw": 3.333,
+        "route": "AMACET",
+        "n": 6
+      },
+      "CETVSM-1205": {
+        "weight": 0.082775,
+        "mean_biglietti_shrunk": 4.394,
+        "mean_biglietti_raw": 3.429,
+        "route": "CETVSM",
+        "n": 7
+      },
+      "VSMCET-1510": {
+        "weight": 0.082133,
+        "mean_biglietti_shrunk": 4.36,
+        "mean_biglietti_raw": 3.0,
+        "route": "VSMCET",
+        "n": 3
+      },
+      "MAIVSM-1935": {
+        "weight": 0.081271,
+        "mean_biglietti_shrunk": 4.314,
+        "mean_biglietti_raw": 4.25,
+        "route": "MAIVSM",
+        "n": 4
+      },
+      "CETAMA-1820": {
+        "weight": 0.081147,
+        "mean_biglietti_shrunk": 4.308,
+        "mean_biglietti_raw": 3.0,
+        "route": "CETAMA",
+        "n": 6
+      },
+      "VSMCET-0910": {
+        "weight": 0.079721,
+        "mean_biglietti_shrunk": 4.232,
+        "mean_biglietti_raw": 2.0,
+        "route": "VSMCET",
+        "n": 2
+      },
+      "MINCET-1925": {
+        "weight": 0.079119,
+        "mean_biglietti_shrunk": 4.2,
+        "mean_biglietti_raw": 3.0,
+        "route": "MINCET",
+        "n": 5
+      },
+      "CETMAI-1520": {
+        "weight": 0.078118,
+        "mean_biglietti_shrunk": 4.147,
+        "mean_biglietti_raw": 4.25,
+        "route": "CETMAI",
+        "n": 8
+      },
+      "MAIVSM-1655": {
+        "weight": 0.077612,
+        "mean_biglietti_shrunk": 4.12,
+        "mean_biglietti_raw": 4.0,
+        "route": "MAIVSM",
+        "n": 7
+      },
+      "SACCET-0900": {
+        "weight": 0.076919,
+        "mean_biglietti_shrunk": 4.083,
+        "mean_biglietti_raw": 2.833,
+        "route": "SACCET",
+        "n": 6
+      },
+      "VSMMAI-0910": {
+        "weight": 0.076521,
+        "mean_biglietti_shrunk": 4.062,
+        "mean_biglietti_raw": 3.5,
+        "route": "VSMMAI",
+        "n": 8
+      },
+      "CETMAI-1700": {
+        "weight": 0.076318,
+        "mean_biglietti_shrunk": 4.051,
+        "mean_biglietti_raw": 4.111,
+        "route": "CETMAI",
+        "n": 9
+      },
+      "MAICET-1325": {
+        "weight": 0.075057,
+        "mean_biglietti_shrunk": 3.984,
+        "mean_biglietti_raw": 4.2,
+        "route": "MAICET",
+        "n": 5
+      },
+      "VSMMIN-1310": {
+        "weight": 0.072621,
+        "mean_biglietti_shrunk": 3.855,
+        "mean_biglietti_raw": 3.571,
+        "route": "VSMMIN",
+        "n": 7
+      },
+      "MAIVSM-0925": {
+        "weight": 0.071583,
+        "mean_biglietti_shrunk": 3.8,
+        "mean_biglietti_raw": 2.0,
+        "route": "MAIVSM",
+        "n": 1
+      },
+      "MAIVSM-1325": {
+        "weight": 0.071583,
+        "mean_biglietti_shrunk": 3.8,
+        "mean_biglietti_raw": 2.0,
+        "route": "MAIVSM",
+        "n": 1
+      },
+      "CETMIN-0920": {
+        "weight": 0.070826,
+        "mean_biglietti_shrunk": 3.76,
+        "mean_biglietti_raw": 5.0,
+        "route": "CETMIN",
+        "n": 2
+      },
+      "VSMCET-1810": {
+        "weight": 0.070399,
+        "mean_biglietti_shrunk": 3.737,
+        "mean_biglietti_raw": 2.25,
+        "route": "VSMCET",
+        "n": 4
+      },
+      "AMACET-1120": {
+        "weight": 0.070295,
+        "mean_biglietti_shrunk": 3.732,
+        "mean_biglietti_raw": 2.778,
+        "route": "AMACET",
+        "n": 9
+      },
+      "CETAMA-1700": {
+        "weight": 0.070279,
+        "mean_biglietti_shrunk": 3.731,
+        "mean_biglietti_raw": 2.667,
+        "route": "CETAMA",
+        "n": 9
+      },
+      "CETMIN-1700": {
+        "weight": 0.066737,
+        "mean_biglietti_shrunk": 3.543,
+        "mean_biglietti_raw": 4.0,
+        "route": "CETMIN",
+        "n": 4
+      },
+      "MAICET-1825": {
+        "weight": 0.065697,
+        "mean_biglietti_shrunk": 3.487,
+        "mean_biglietti_raw": 3.429,
+        "route": "MAICET",
+        "n": 7
+      },
+      "MAIVSM-1825": {
+        "weight": 0.065304,
+        "mean_biglietti_shrunk": 3.467,
+        "mean_biglietti_raw": 3.0,
+        "route": "MAIVSM",
+        "n": 6
+      },
+      "VSMMIN-1650": {
+        "weight": 0.064522,
+        "mean_biglietti_shrunk": 3.425,
+        "mean_biglietti_raw": 2.333,
+        "route": "VSMMIN",
+        "n": 3
+      },
+      "CETMAI-1030": {
+        "weight": 0.063553,
+        "mean_biglietti_shrunk": 3.374,
+        "mean_biglietti_raw": 3.0,
+        "route": "CETMAI",
+        "n": 4
+      },
+      "MAICET-1440": {
+        "weight": 0.061437,
+        "mean_biglietti_shrunk": 3.261,
+        "mean_biglietti_raw": 3.125,
+        "route": "MAICET",
+        "n": 8
+      },
+      "CETMAI-0920": {
+        "weight": 0.060318,
+        "mean_biglietti_shrunk": 3.202,
+        "mean_biglietti_raw": 2.8,
+        "route": "CETMAI",
+        "n": 5
+      },
+      "VSMMIN-1810": {
+        "weight": 0.060165,
+        "mean_biglietti_shrunk": 3.194,
+        "mean_biglietti_raw": 2.4,
+        "route": "VSMMIN",
+        "n": 5
+      },
+      "MAICET-1655": {
+        "weight": 0.058012,
+        "mean_biglietti_shrunk": 3.08,
+        "mean_biglietti_raw": 2.875,
+        "route": "MAICET",
+        "n": 8
+      },
+      "CETMAI-1320": {
+        "weight": 0.057964,
+        "mean_biglietti_shrunk": 3.077,
+        "mean_biglietti_raw": 2.6,
+        "route": "CETMAI",
+        "n": 5
+      },
+      "MAICET-1935": {
+        "weight": 0.056042,
+        "mean_biglietti_shrunk": 2.975,
+        "mean_biglietti_raw": 2.0,
+        "route": "MAICET",
+        "n": 2
+      },
+      "VSMMIN-1510": {
+        "weight": 0.055305,
+        "mean_biglietti_shrunk": 2.936,
+        "mean_biglietti_raw": 1.75,
+        "route": "VSMMIN",
+        "n": 4
+      },
+      "CETMIN-1320": {
+        "weight": 0.051988,
+        "mean_biglietti_shrunk": 2.76,
+        "mean_biglietti_raw": 2.5,
+        "route": "CETMIN",
+        "n": 2
+      },
+      "CETMIN-1030": {
+        "weight": 0.050857,
+        "mean_biglietti_shrunk": 2.7,
+        "mean_biglietti_raw": 2.0,
+        "route": "CETMIN",
+        "n": 1
+      },
+      "CETMIN-1820": {
+        "weight": 0.048221,
+        "mean_biglietti_shrunk": 2.56,
+        "mean_biglietti_raw": 2.0,
+        "route": "CETMIN",
+        "n": 2
+      },
+      "CETMIN-1520": {
+        "weight": 0.042517,
+        "mean_biglietti_shrunk": 2.257,
+        "mean_biglietti_raw": 1.75,
+        "route": "CETMIN",
+        "n": 4
+      }
+    }
+  }
 }
